@@ -6,3 +6,5 @@
 // Examples
 void frame_buffer_example1();
 void frame_buffer_example2();
+void frame_buffer_example3();
+

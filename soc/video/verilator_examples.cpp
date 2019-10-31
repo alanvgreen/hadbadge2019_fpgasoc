@@ -1,6 +1,8 @@
 #include "verilator_examples.hpp"
 #include <stdio.h>
 #include <stdlib.h>
+#include <gd.h>
+
 
 
 // Allocate a frame buffer and set the FBADDR_REG to point to it
@@ -193,4 +195,49 @@ void frame_buffer_example2() {
 			(shift << GFX_FBPITCH_PAL_OFF) + 
 			(480 << GFX_FBPITCH_PITCH_OFF);
 	};
+}
+
+
+// Demonstrates scrolling
+void frame_buffer_example3() {
+	// Open a PNG image file, get its dimensions
+	FILE *f=fopen("elventower.png", "r");
+	if (f==NULL) {
+		perror("elventower.png");
+		exit(1);
+	}
+	gdImagePtr im=gdImageCreateFromPng(f);
+	unsigned sx = 516; //gdImageSX(im);
+	unsigned sy = 320; //gdImageSY(im);
+
+	// Step 1 & 2: Allocate a buffer and set GFX_FBADDR_REG
+	// This is handled by fb_alloc
+	uint8_t *fb = fb_alloc(sx, sy, true);
+
+	// Step 3: Set width of buffer in pixels
+	// only first 480 pixels of each line will be shown
+	GFX_REG(GFX_FBPITCH_REG) = sx << GFX_FBPITCH_PITCH_OFF;
+
+	// Step 4: Enable frame buffer
+	// Also set it to 8 bit depth.
+	GFX_REG(GFX_LAYEREN_REG) = GFX_LAYEREN_FB_8BIT | GFX_LAYEREN_FB;
+	
+	// Step 5 set palette from image
+	unsigned pal_size = gdImageColorsTotal(im);
+	for (unsigned i = 0; i < pal_size; i++) {
+		uint32_t t = (0xff << 24) +
+			(gdImageBlue(im, i) << 16) +
+			(gdImageGreen(im, i) << 8) +
+			(gdImageRed(im, i));
+		GFXPAL[i] = t;
+	}
+
+	// Load image pixels in
+	unsigned p = 0;
+	for (unsigned y = 0; y < sy; y++) {
+		for (unsigned x = 0; x < sx; x++) {
+			unsigned t = (uint8_t) gdImageGetPixel(im, x, y);
+			fb[p++] = t;
+		}
+	}
 }

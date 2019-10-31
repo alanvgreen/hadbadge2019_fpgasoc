@@ -60,7 +60,7 @@ void load_tilemap(const char *file) {
 // Used by video memory controller.
 int qpi_cur_adr;
 int qpi_state=0;
-uint8_t qpi_mem[1024*1024];
+uint8_t qpi_mem[2*1024*1024];
 void qpi_eval(int clk, int qpi_addr, int qpi_do_read, int *qpi_is_idle, int *qpi_next_word, uint32_t *qpi_rdata) {
 	if (clk) {
 		*qpi_next_word=0;
@@ -76,7 +76,7 @@ void qpi_eval(int clk, int qpi_addr, int qpi_do_read, int *qpi_is_idle, int *qpi
 		} else if (qpi_state==4) {
 			qpi_state=1;
 			*qpi_next_word=1;
-			qpi_cur_adr &= 0xffffc;
+			qpi_cur_adr &= 0x1ffffc;
 			(*qpi_rdata)=qpi_mem[qpi_cur_adr++];
 			(*qpi_rdata)|=qpi_mem[qpi_cur_adr++]<<8;
 			(*qpi_rdata)|=qpi_mem[qpi_cur_adr++]<<16;
@@ -187,6 +187,10 @@ void setup7() {
 	frame_buffer_example2();
 }
 
+void setup8() {
+	frame_buffer_example3();
+}
+
 // Array of all setups - defined in verilator_options.hpp
 setup_fn setups[] = {
 	setup1,
@@ -196,6 +200,7 @@ setup_fn setups[] = {
 	setup5,
 	setup6,
 	setup7,
+	setup8,
 	NULL
 };
 
