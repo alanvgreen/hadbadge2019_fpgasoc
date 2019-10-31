@@ -1,6 +1,9 @@
 #include "verilator_examples.hpp"
 #include <stdio.h>
 #include <stdlib.h>
+#include <gd.h>
+#include <functional>
+
 
 
 // Allocate a frame buffer and set the FBADDR_REG to point to it
@@ -148,6 +151,13 @@ void frame_buffer_example1() {
 	draw_pixel(240, 160, 3); 
 }
 
+static void fb2_cb(int field) {
+	int shift = (field / 3) & 0xf;
+	GFX_REG(GFX_FBPITCH_REG) = 
+		(shift << GFX_FBPITCH_PAL_OFF) + 
+		(480 << GFX_FBPITCH_PITCH_OFF);	
+}
+
 // Demonstrates palette shifting
 void frame_buffer_example2() {
 
@@ -187,10 +197,96 @@ void frame_buffer_example2() {
 	draw_line(240, 180, 255, 170, 10);
 
 	// Set end-of-frame callback to change palettte
-	end_of_frame_callback = [](int field) { 
-		int shift = (field / 3) & 0xf;
-		GFX_REG(GFX_FBPITCH_REG) = 
-			(shift << GFX_FBPITCH_PAL_OFF) + 
-			(480 << GFX_FBPITCH_PITCH_OFF);
-	};
+	end_of_frame_callback = fb2_cb;
+}
+
+struct Example3Data {
+	uint8_t * fb_base;
+	int buffer_width;
+	int sx, sy;
+	int dx = 16; 
+	int dy = 16;
+	int x = 0;
+	int y = 0;
+};
+static Example3Data e3data;
+
+// This call back bounces the viewport around the large image
+static void e3_callback(int field) {
+	// Move top left corner and allow to bounce off the "sides"
+	e3data.x += e3data.dx;
+	if (e3data.x <= 0) {
+		e3data.dx = 16;
+	} else if (e3data.x >= e3data.sx - 480) {
+		e3data.dx = -16;
+	}
+	e3data.y += e3data.dy;
+	if (e3data.y <= 0) {
+		e3data.dy = 16;
+	} else if (e3data.y >= e3data.sy - 320) {
+		e3data.dy = -16;
+	}
+
+	// Set frame buffer x pixels across and y pixels down
+	// Normally, you'd use e3data.fb_base:
+	// GFX_REG(GFX_FBADDR_REG) = e3data.fb_base + e3data.x + e3data.y * e3data.buffer_width;
+
+	// But for the sim we use the address we know the fb_init() gives
+	 GFX_REG(GFX_FBADDR_REG) = 0x30000 + e3data.x + e3data.y * e3data.buffer_width;
+}
+
+// Demonstrates scrolling
+void frame_buffer_example3() {
+	// Open a PNG image file, get its dimensions
+	FILE *f=fopen("elventower.png", "r");
+	if (f==NULL) {
+		perror("elventower.png");
+		exit(1);
+	}
+	gdImagePtr im=gdImageCreateFromPng(f);
+	uint32_t sx = gdImageSX(im);
+	// Buffer width must be a multiple of 16
+	uint32_t buffer_width = (sx + 15) & ~15;
+	uint32_t sy = gdImageSY(im);
+
+	// Step 1 & 2: Allocate a buffer and set GFX_FBADDR_REG
+	// This is handled by fb_alloc
+	uint8_t *fb = fb_alloc(buffer_width, sy, true);
+
+	// Step 3: Set width of buffer in pixels
+	// only first 480 pixels of each line will be shown
+	GFX_REG(GFX_FBPITCH_REG) = buffer_width << GFX_FBPITCH_PITCH_OFF;
+
+	// Step 4: Enable frame buffer
+	// Also set it to 8 bit depth.
+	GFX_REG(GFX_LAYEREN_REG) = GFX_LAYEREN_FB_8BIT | GFX_LAYEREN_FB;
+	
+	// Step 5 set palette from image
+	unsigned pal_size = gdImageColorsTotal(im);
+	for (unsigned i = 0; i < pal_size; i++) {
+		uint32_t t = (0xff << 24) +
+			(gdImageBlue(im, i) << 16) +
+			(gdImageGreen(im, i) << 8) +
+			(gdImageRed(im, i));
+		GFXPAL[i] = t;
+	}
+
+	// Load image pixels in to framebuffer
+	unsigned p = 0;
+	for (unsigned y = 0; y < sy; y++) {
+		for (unsigned x = 0; x < buffer_width; x++) {
+			unsigned t = (uint8_t) gdImageGetPixel(im, x, y);
+			fb[p++] = t;
+		}
+	}
+
+	// Set up data for callback to use
+	e3data.fb_base = fb;
+	e3data.sx = sx;
+	e3data.sy = sy;
+	e3data.buffer_width = buffer_width;
+	e3data.sx = sx;
+	
+	// Set end-of-frame callback to move view
+	end_of_frame_callback = e3_callback;
 }
