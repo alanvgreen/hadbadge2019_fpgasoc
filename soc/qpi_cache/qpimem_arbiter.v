@@ -46,14 +46,15 @@ module qpimem_arbiter #(
 	output reg [32*MASTER_IFACE_CNT-1:0] rdata,
 	input [MASTER_IFACE_CNT-1:0] do_read,
 	input [MASTER_IFACE_CNT-1:0] do_write,
+	input [MASTER_IFACE_CNT-1:0] acked_writes,
 	output reg [MASTER_IFACE_CNT-1:0] next_word,
-	output reg [MASTER_IFACE_CNT-1:0] holding,
 	output reg [MASTER_IFACE_CNT-1:0] is_idle,
 	
 	output reg [31:0] s_addr,
 	output reg [31:0] s_wdata,
 	input [31:0] s_rdata,
 	output reg s_do_write,
+	output reg s_acked_writes,
 	output reg s_do_read,
 	input s_is_idle,
 	input s_next_word
@@ -82,7 +83,6 @@ always @(*) begin
 		`SLICE_32(rdata, i)=s_rdata; //no need to mux this
 		is_idle[i]=!(do_read[i] || do_write[i]); //we'll override this if selected
 		next_word[i]=0;
-		holding[i] = hold && (hold_iface==i);
 		if ((hold && (hold_iface==i)) || ((!hold) && (do_read[i] || do_write[i]))) begin
 			active_iface=i;
 		end
@@ -91,8 +91,9 @@ always @(*) begin
 	s_wdata=`SLICE_32(wdata,  active_iface);
 	s_do_read=do_read[active_iface];
 	s_do_write=do_write[active_iface];
-	//Note: verilator complains about some circular dependency because of this line... no clue what it's on about.
+	s_acked_writes=acked_writes[active_iface];
 	next_word[active_iface]=s_next_word;
+	//Note: verilator complains about some circular dependency because of this line... no clue what it's on about.
 	is_idle[active_iface]=s_is_idle;
 end
 

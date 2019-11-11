@@ -20,9 +20,9 @@ module spi_slave(
 	// Interface to qpimem_arb
 	output qpimem_arb_do_write,
 	input qpimem_arb_next_word,
-	output [23:0] qpimem_arb_addr,
+	output [31:0] qpimem_arb_addr,
 	output [31:0] qpimem_arb_wdata,
-	input qpimem_arb_holding,
+	input qpimem_arb_ack,
 
 	// Signals from outside pins
 	input SCK,
@@ -117,7 +117,7 @@ reg dma_data_out_strobe;
 wire dma_out_full;
 
 // FIFO for DMA
-spi_dma_write_fifo write_fifo(
+spis_dma_write_fifo write_fifo(
 	.clk(clk),
 	.reset(reset | cs_start), // Reset on chip select
 	.dma_addr(register_dma_dest_addr),
@@ -131,7 +131,7 @@ spi_dma_write_fifo write_fifo(
 	.qpimem_arb_next_word(qpimem_arb_next_word),
 	.qpimem_arb_addr(qpimem_arb_addr),
 	.qpimem_arb_wdata(qpimem_arb_wdata),
-	.qpimem_arb_holding(qpimem_arb_holding),
+	.qpimem_arb_ack(qpimem_arb_ack),
 
 	// Status
 	.empty(),
@@ -178,7 +178,7 @@ always @(posedge clk) begin
 end
 endmodule
 
-module spi_dma_write_fifo #(
+module spis_dma_write_fifo #(
 	parameter integer FIFO_WORDS = 512
 )(
 	input clk,
@@ -194,9 +194,9 @@ module spi_dma_write_fifo #(
 	// Interface to qpimem_arb
 	output reg qpimem_arb_do_write,
 	input qpimem_arb_next_word,
-	output reg [23:0] qpimem_arb_addr,
+	output reg [31:0] qpimem_arb_addr,
 	output [31:0] qpimem_arb_wdata,
-	input qpimem_arb_holding,
+	input qpimem_arb_ack,
 
 	// Status
 	output empty,
@@ -220,12 +220,12 @@ always @(posedge clk) begin
 	if (reset) begin
 		w_ptr <= 0;
 		r_ptr <= 0;
-		qpimem_arb_addr <= dma_addr[23:0];
+		qpimem_arb_addr <= dma_addr;
 	end else begin 
-		// If there is data available, try to write it
 		if (empty) begin
 			qpimem_arb_do_write <= 0;
 		end else begin
+			// If there is data available, try to write it
 			qpimem_arb_do_write <= 1;
 			if (qpimem_arb_next_word) begin
 				r_ptr <= r_ptr + 1;
