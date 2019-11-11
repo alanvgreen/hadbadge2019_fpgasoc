@@ -47,6 +47,7 @@ module qpimem_arbiter #(
 	input [MASTER_IFACE_CNT-1:0] do_read,
 	input [MASTER_IFACE_CNT-1:0] do_write,
 	output reg [MASTER_IFACE_CNT-1:0] next_word,
+	output reg [MASTER_IFACE_CNT-1:0] holding,
 	output reg [MASTER_IFACE_CNT-1:0] is_idle,
 	
 	output reg [31:0] s_addr,
@@ -71,20 +72,18 @@ integer i;
 
 `define SLICE_32(v, i) v[32*i+:32]
 
-reg idle;
 reg [$clog2(MASTER_IFACE_CNT)-1:0] active_iface;
 reg hold;		//if 1, hold_iface is permanently routed to slave iface
 reg [$clog2(MASTER_IFACE_CNT)-1:0] hold_iface;
 
 always @(*) begin
-	idle=0;
 	active_iface=0;
 	for (i=0; i<MASTER_IFACE_CNT; i=i+1) begin : genblk
 		`SLICE_32(rdata, i)=s_rdata; //no need to mux this
 		is_idle[i]=!(do_read[i] || do_write[i]); //we'll override this if selected
 		next_word[i]=0;
+		holding[i] = hold && (hold_iface==i);
 		if ((hold && (hold_iface==i)) || ((!hold) && (do_read[i] || do_write[i]))) begin
-			idle=0;
 			active_iface=i;
 		end
 	end
@@ -93,10 +92,8 @@ always @(*) begin
 	s_do_read=do_read[active_iface];
 	s_do_write=do_write[active_iface];
 	//Note: verilator complains about some circular dependency because of this line... no clue what it's on about.
-	if (!idle) begin
-		next_word[active_iface]=s_next_word;
-		is_idle[active_iface]=s_is_idle;
-	end
+	next_word[active_iface]=s_next_word;
+	is_idle[active_iface]=s_is_idle;
 end
 
 always @(posedge clk) begin
@@ -107,7 +104,7 @@ always @(posedge clk) begin
 		if (hold && s_is_idle) begin
 			//Read/write is done; un-hold
 			hold <= 0;
-		end else if (!idle) begin //note: idle is also 0 if hold was set last run
+		end else if (!s_is_idle) begin //note: idle is also 0 if hold was set last run
 			//We're serving a master.
 			hold <= 1;
 			hold_iface <= active_iface;

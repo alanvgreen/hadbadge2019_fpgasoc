@@ -5,7 +5,6 @@
 #include "../psram_emu.hpp"
 
 uint64_t ts=0;
-uint64_t tracepos=0;
 
 Vspistest *tb;
 Psram_emu *psram;
@@ -17,22 +16,112 @@ double sc_time_stamp() {
 
 #define CHECK(x) do { if (!(x)) printf("%s:%d: check failed: %s\n", __FILE__, __LINE__, #x); } while(0)
 
-int doclk() {
-	int do_abort;
-	ts++;
-	tracepos++;
+#define SPIS_HALF_TICK 25
+bool ten_words(int word, uint32_t* out) {
+	*out = (uint32_t) word;
+	return word >= 10;
+}
+
+typedef bool (*nextwordfn_t)(int word, uint32_t* out);
+struct spis_txn_t {
+	uint64_t cs_start; // timestamp
+	uint64_t cs_holdoff; // ns
+	nextwordfn_t nextwordfn;
+	uint64_t cs_holdon;
+};
+
+spis_txn_t spis_txn { 522, 50, ten_words, 50};
+enum spis_state_t { NOT_STARTED, SELECTED, SENDING, STOPPING, STOPPED } spis_state;
+uint64_t spis_next_event;
+uint32_t spis_word_val;
+int spis_next_bit;
+
+void init_spis() {
+	spis_next_event = spis_txn.cs_start;
+	tb->spis_ncs = 1;
+}
+
+bool get_next_bit(bool *out) {
+	bool done = false;
+	int bit = spis_next_bit & 0x1f;
+	if (bit == 0) {
+		done = spis_txn.nextwordfn(spis_next_bit >> 5, &spis_word_val);
+	} 
+	*out = !!(spis_word_val & (1 << bit));
+	spis_next_bit++;
+	return done;
+}
+
+void process_spis() {
+	ts = spis_next_event;
+
+	bool bit;
+
+	if (spis_state == NOT_STARTED) {
+		tb->spis_ncs = 0;
+		spis_next_event += spis_txn.cs_holdoff;
+		spis_state = SELECTED;
+	} else if (spis_state == SELECTED) {
+		spis_next_bit = 0;
+		get_next_bit(&bit);
+		tb->spis_mosi = bit;
+		spis_next_event += SPIS_HALF_TICK;
+		spis_state = SENDING;
+	} else if (spis_state == SENDING) {
+		// Assuming clock low idle, and bits valid for pos edge
+		if (tb->spis_clk) {
+			// If clock is high, change to next 
+			bool bit;
+			bool done = get_next_bit(&bit);
+			tb->spis_clk = 0;
+			tb->spis_mosi = bit;
+			if (done) {
+				spis_next_event += spis_txn.cs_holdon;
+				spis_state = STOPPING;
+			} else {
+				spis_next_event += SPIS_HALF_TICK;
+			}
+		} else {
+			// Hold data steady for transition
+			tb->spis_clk = 1;
+			spis_next_event += SPIS_HALF_TICK;
+		}
+	} else if (spis_state == STOPPING) {
+		tb->spis_ncs = 1;
+		spis_next_event = 1e8;
+		spis_state = STOPPED;
+	}
+	tb->eval();
+	trace->dump(ts);
+}
+
+
+#define SPIS_HALF_TICK 25
+int spis_last = 0;
+
+int halfclk(int advance, int clk) {
 	int sin;
-	do_abort |= psram->eval(tb->spi_clk, tb->spi_ncs, tb->spi_sout, tb->spi_oe, &sin);
-	tb->clk = 0;
+	uint64_t next = ts + advance;
+
+	if (next >= spis_next_event) {
+		process_spis();
+	}
+
+	ts = next;	
+	int abort = psram->eval(tb->spi_clk, tb->spi_ncs, tb->spi_sout, tb->spi_oe, &sin);
+	tb->clk = clk;
 	tb->eval();
 	tb->spi_sin=sin;
-	trace->dump(tracepos*21);
-	do_abort |= psram->eval(tb->spi_clk, tb->spi_ncs, tb->spi_sout, tb->spi_oe, &sin);
-	tb->clk = 1;
-	tb->eval();
-	tb->spi_sin = sin;
-	trace->dump(tracepos*21+10);
-	return do_abort;
+	trace->dump(ts);
+	return abort;
+}
+
+
+//doclk advances time by 21 units
+int doclk() {
+	int abort = halfclk(10, 0);
+	abort |= halfclk(11, 1);
+	return abort;
 }
 
 void do_write(int addr, int data) {
@@ -71,6 +160,7 @@ int main(int argc, char **argv) {
 	psram = new Psram_emu(8*1024*1024);
 	psram->force_qpi();
 
+	init_spis();
 	tb->rst = 1;
 	doclk();
 	tb->rst=0;
@@ -78,6 +168,20 @@ int main(int argc, char **argv) {
 	doclk();
 	doclk();
 	doclk();
+
+	// Enable unit, set input addr to 0x10000
+	do_write(0x0, 0x1);
+	do_write(0x4, 0x40010000);
+
+	while (ts < 100000) {
+		doclk();
+	}
+
+	// Dump memory to file
+	FILE *dump = fopen("dump.bin","wb");  // w for write, b for binary
+	fwrite(psram->get_mem(),8*1024*1024,1,dump); 
+	fclose(dump);
+
 
 /*
 

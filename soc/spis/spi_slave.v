@@ -17,12 +17,12 @@ module spi_slave(
 	input ren,
 	output ready,
 
-	// Interface to qpimem_iface
-	output qpimem_iface_do_write,
-	input qpimem_iface_next_word,
-	output [23:0] qpimem_iface_addr,
-	output [31:0] qpimem_iface_wdata,
-	input qpimem_iface_is_idle,
+	// Interface to qpimem_arb
+	output qpimem_arb_do_write,
+	input qpimem_arb_next_word,
+	output [23:0] qpimem_arb_addr,
+	output [31:0] qpimem_arb_wdata,
+	input qpimem_arb_holding,
 
 	// Signals from outside pins
 	input SCK,
@@ -42,6 +42,8 @@ reg register_dma_overflow; // bit 2 (r/w) - write 0 to reset
 
 // chip select is active low
 assign transfer_in_progress = !cs_out;
+
+assign ready = 1;
 
 // Register handling
 always @(posedge clk) begin
@@ -117,19 +119,19 @@ wire dma_out_full;
 // FIFO for DMA
 spi_dma_write_fifo write_fifo(
 	.clk(clk),
-	.reset(cs_start), // Reset on chip select
+	.reset(reset | cs_start), // Reset on chip select
 	.dma_addr(register_dma_dest_addr),
 
 	// Data into fifo
 	.dma_data_out(dma_data_out),
 	.dma_data_out_strobe(dma_data_out_strobe),
 
-	// Interface to qpimem_iface
-	.qpimem_iface_do_write(qpimem_iface_do_write),
-	.qpimem_iface_next_word(qpimem_iface_next_word),
-	.qpimem_iface_addr(qpimem_iface_addr),
-	.qpimem_iface_wdata(qpimem_iface_wdata),
-	.qpimem_iface_is_idle(qpimem_iface_is_idle),
+	// Interface to qpimem_arb
+	.qpimem_arb_do_write(qpimem_arb_do_write),
+	.qpimem_arb_next_word(qpimem_arb_next_word),
+	.qpimem_arb_addr(qpimem_arb_addr),
+	.qpimem_arb_wdata(qpimem_arb_wdata),
+	.qpimem_arb_holding(qpimem_arb_holding),
 
 	// Status
 	.empty(),
@@ -189,12 +191,12 @@ module spi_dma_write_fifo #(
 	input [31:0] dma_data_out,
 	input dma_data_out_strobe,
 
-	// Interface to qpimem_iface
-	output reg qpimem_iface_do_write,
-	input qpimem_iface_next_word,
-	output reg [23:0] qpimem_iface_addr,
-	output [31:0] qpimem_iface_wdata,
-	input qpimem_iface_is_idle,
+	// Interface to qpimem_arb
+	output reg qpimem_arb_do_write,
+	input qpimem_arb_next_word,
+	output reg [23:0] qpimem_arb_addr,
+	output [31:0] qpimem_arb_wdata,
+	input qpimem_arb_holding,
 
 	// Status
 	output empty,
@@ -210,24 +212,24 @@ reg [$clog2(FIFO_WORDS)-1:0] r_ptr;
 assign empty = (r_ptr == w_ptr);
 assign full = (w_ptr == (r_ptr - 1));
 
-// Data to write always sent to qpimem_iface, but will not be
+// Data to write always sent to qpimem_arb, but will not be
 // written until do_write is detected
-assign qpimem_iface_wdata = ram[r_ptr];
+assign qpimem_arb_wdata = ram[r_ptr];
 
 always @(posedge clk) begin
 	if (reset) begin
 		w_ptr <= 0;
 		r_ptr <= 0;
-		qpimem_iface_addr <= dma_addr[23:0];
+		qpimem_arb_addr <= dma_addr[23:0];
 	end else begin 
 		// If there is data available, try to write it
 		if (empty) begin
-			qpimem_iface_do_write <= 0;
+			qpimem_arb_do_write <= 0;
 		end else begin
-			qpimem_iface_do_write <= 1;
-			if (qpimem_iface_next_word) begin
+			qpimem_arb_do_write <= 1;
+			if (qpimem_arb_next_word) begin
 				r_ptr <= r_ptr + 1;
-				qpimem_iface_addr <= qpimem_iface_addr + 4;
+				qpimem_arb_addr <= qpimem_arb_addr + 4;
 			end
 		end
 

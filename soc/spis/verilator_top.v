@@ -28,6 +28,11 @@
  */
 `timescale 1us/1ns
 
+
+`define SLICE_32(v, i) v[32*i+:32]
+`define SLICE_4(v, i) v[4*i+:4]
+
+
 module spistest(
 	// Everyone's faves
 	input clk,
@@ -64,15 +69,17 @@ wire spis_dma_strobe;
 wire [31:0] spis_dma_data;
 
 
-// qpimem interface
-wire qpi_do_read;
-assign qpi_do_read = 0;
-wire qpi_do_write;
-reg qpi_next_word;
-wire [23:0] qpi_addr;
-reg [31:0] qpi_rdata;
-wire [31:0] qpi_wdata;
-reg qpi_is_idle;
+// QPI ARB interface
+parameter integer QPI_MASTERCNT = 1;
+
+wire [32*QPI_MASTERCNT-1:0] qpimem_arb_addr;
+wire [32*QPI_MASTERCNT-1:0] qpimem_arb_wdata;
+wire [32*QPI_MASTERCNT-1:0] qpimem_arb_rdata;
+wire [QPI_MASTERCNT-1:0] qpimem_arb_do_read;
+wire [QPI_MASTERCNT-1:0] qpimem_arb_do_write;
+wire [QPI_MASTERCNT-1:0] qpimem_arb_next_word;
+wire [QPI_MASTERCNT-1:0] qpimem_arb_holding;
+wire [QPI_MASTERCNT-1:0] qpimem_arb_is_idle;
 
 spi_slave spis(
 	.clk(clk),
@@ -86,12 +93,12 @@ spi_slave spis(
 	.ren(ren),
 	.ready(ready),
 
-	// Interface to qpimem_iface
-	.qpimem_iface_do_write(qpi_do_write),
-	.qpimem_iface_next_word(qpi_next_word),
-	.qpimem_iface_addr(qpi_addr),
-	.qpimem_iface_wdata(qpi_wdata),
-	.qpimem_iface_is_idle(qpi_is_idle),
+	// Interface to qpimem_arb
+	.qpimem_arb_do_write(qpimem_arb_do_write[0]),
+	.qpimem_arb_next_word(qpimem_arb_next_word[0]),
+	.qpimem_arb_addr(`SLICE_32(qpimem_arb_addr, 0)),
+	.qpimem_arb_wdata(`SLICE_32(qpimem_arb_wdata, 0)),
+	.qpimem_arb_holding(qpimem_arb_holding[0]),
 
 	// Signals from outside pins
 	.SCK(spis_clk),
@@ -100,6 +107,40 @@ spi_slave spis(
 	.CS(spis_ncs)
 );
 
+
+// qpimem interface
+wire qpi_do_read;
+assign qpi_do_read = 0;
+wire qpi_do_write;
+reg qpi_next_word;
+wire [23:0] qpi_addr;
+reg [31:0] qpi_rdata;
+wire [31:0] qpi_wdata;
+reg qpi_is_idle;
+
+qpimem_arbiter #(
+		.MASTER_IFACE_CNT(QPI_MASTERCNT)
+	) qpi_arb (
+	.clk(clk),
+	.reset(rst),
+
+	.addr(qpimem_arb_addr),
+	.wdata(qpimem_arb_wdata),
+	.rdata(qpimem_arb_rdata),
+	.do_read(qpimem_arb_do_read),
+	.do_write(qpimem_arb_do_write),
+	.next_word(qpimem_arb_next_word),
+	.holding(qpimem_arb_holding),
+	.is_idle(qpimem_arb_is_idle),
+
+	.s_addr(qpi_addr),
+	.s_wdata(qpi_wdata),
+	.s_rdata(qpi_rdata),
+	.s_do_write(qpi_do_write),
+	.s_do_read(qpi_do_read),
+	.s_is_idle(qpi_is_idle),
+	.s_next_word(qpi_next_word)
+);	
 
 qpimem_iface qpimem_iface(
 	.clk(clk),
