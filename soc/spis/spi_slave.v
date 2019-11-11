@@ -1,11 +1,11 @@
 /**
  * SPI Slave that receives large amounts of data and writes to main memory via DMA.
  *
- * - all transfers are a multiple of 32 32 bit words (1024bits) 
- * - does not output any data
+ * - all transfers are 32 bit words
+ * - does not output any data on SPI bus
  */
 
-module SPI_slave(
+module spi_slave(
 	input clk, 
 	input reset,
 
@@ -17,20 +17,18 @@ module SPI_slave(
 	input ren,
 	output ready,
 
-	// Interface to dma_writer
-	output [31:0] dma_addr;
-	output [15:0] dma_len;
-	output dma_run;
-	input dma_done;
-
-	output dma_strobe;
-	output dma_data;
+	// Interface to qpimem_iface
+	output qpimem_iface_do_write,
+	input qpimem_iface_next_word,
+	output [23:0] qpimem_iface_addr,
+	output [31:0] qpimem_iface_wdata,
+	input qpimem_iface_is_idle,
 
 	// Signals from outside pins
 	input SCK,
 	input MOSI,
 	output MISO,
-	input CS,    // Active low
+	input CS    // Active low
 	);
 
 // Internal registers 
@@ -38,39 +36,50 @@ module SPI_slave(
 reg [31:0] register_dma_dest_addr;
 
 // Reg 0 - Control and status;
-reg enable; // bit 0 (r/w)
+reg register_enable; // bit 0 (r/w)
 wire transfer_in_progress; // bit 1 (ro)
+reg register_dma_overflow; // bit 2 (r/w) - write 0 to reset
 
 // chip select is active low
 assign transfer_in_progress = !cs_out;
 
 // Register handling
 always @(posedge clk) begin
-	if (wen) begin
-		case (register_num) begin
-			0: enable <= data_in[0];
-			1: register_dma_dest_addr <= data_in;
-			default: /*nop*/;
-		end 
-	end
-	if (ren) begin
-		case (register_num) begin
-			0: data_out <= {30'b0, transfer_in_progress, enable};
-			1: data_out <= register_dma_dest_addr;
-			default: data_out <= 0;
-		end 
+	if (reset) begin
+		register_dma_dest_addr <= 0;
+		register_enable <= 0;
+		register_dma_overflow <= 0;
+	end else begin
+		if (wen) begin
+			case (register_num) 
+				0: begin 
+					register_enable <= data_in[0];
+					register_dma_overflow <= data_in[2];
+				end
+				1: register_dma_dest_addr <= data_in;
+				default: /*nop*/;
+			endcase
+		end
+		if (ren) begin
+			case (register_num) 
+				0: data_out <= {
+						29'b0, 
+						register_dma_overflow, 
+						transfer_in_progress, 
+						register_enable
+					};
+				1: data_out <= register_dma_dest_addr;
+				default: data_out <= 0;
+			endcase
+		end
 	end
 end
-
-// DMA writer - always writes blocks of 32 bytes to addr
-reg [31:0] dma_addr;
-assign dma_len <= 32;
 
 // Have SPI inputs cross clock domain
 wire cs_out;
 wire cs_start;
 wire cs_end;
-SPI_bit_fifo cs_fifo(
+spi_bit_fifo cs_fifo(
 	.in_data(CS),
 	.clk(clk),
 	.reset(reset),
@@ -79,93 +88,162 @@ SPI_bit_fifo cs_fifo(
 	.is_pos_edge(cs_end));
 
 wire sck_edge;
-SPI_bit_fifo sck_fifo(
+spi_bit_fifo sck_fifo(
 	.in_data(SCK),
 	.clk(clk),
-	.reset(reset),
+	.reset(cs_start), // reset on cs
 	.out_data(),
 	.is_pos_edge(sck_edge),
 	.is_neg_edge());
 
 wire mosi_out;
-SPI_bit_fifo sck_fifo(
+spi_bit_fifo mosi_fifo(
 	.in_data(MOSI),
 	.clk(clk),
-	.reset(reset),
+	.reset(cs_start), // reset on cs
 	.out_data(mosi_out),
 	.is_pos_edge(),
 	.is_neg_edge());
 
-// Always output zeros
-assign MOSI = 0;
+// Always output zeros to spi master
+assign MISO = 0;
 
 // Word input FIFO
 reg [31:0] input_bits; // FIFO for word in - 31 bits + 1 bit for guard
+wire [31:0] dma_data_out;
+wire dma_data_out_strobe;
+wire dma_out_full;
 
-// Number of words sent to dma_writer
-reg [4:0] words_sent; // Counts up from 0 to 31
+// FIFO for DMA
+spi_dma_write_fifo write_fifo(
+	.clk(clk),
+	.reset(cs_start), // Reset on chip select
+	.dma_addr(register_dma_dest_addr),
 
+	// Data into fifo
+	.dma_data_out(dma_data_out),
+	.dma_data_out_strobe(dma_data_out_strobe),
+
+	// Interface to qpimem_iface
+	.qpimem_iface_do_write(qpimem_iface_do_write),
+	.qpimem_iface_next_word(qpimem_iface_next_word),
+	.qpimem_iface_addr(qpimem_iface_addr),
+	.qpimem_iface_wdata(qpimem_iface_wdata),
+	.qpimem_iface_is_idle(qpimem_iface_is_idle),
+
+	// Status
+	.empty(),
+	.full(dma_out_full)
+	);
 
 always @(posedge clk) begin
-	if (reset) begin
-		word_in_fifo <= {1'b1, 32'b0}; // set guard bit
-		dma_strobe <= 0;
-		dma_run <= 0;
-		// Reset on cs low
+	if (reset | !register_enable) begin
+		// In reset or disabled - same thing
 		input_bits <= {1'b1, 31'b0}; // set guard bit;
-		dma_addr <= register_dma_dest_addr;
-		words_sent <= 0;
-
 	end else begin
-		// Things that are set by default
-		dma_strobe <= 0;
-		dma_run <= 0;
-
-		if (transfer_in_progress) begin
+		// Transfer in progress means CS is low
+		if (transfer_in_progress & !register_dma_overflow) begin
 			// TODO: any error checking
-
 			// Check for clock edge
 			if (sck_edge) begin
-				if (words_sent == 0) begin
-					dma_run = 1;
-				end
-				// Take data in
-				if (word_in_fifo[0]) begin
-					// See the guard bit
-					// Strobe data into dma_writer
-					dma_data <= {mosi_out, word_in_fifo[31:1]};
-					dma_strobe <= 1;
-
-					// Increment words sent, and if all done, then 
-					// also increment dma address, ready to start again
-					words_sent <= words_sent + 1;
-					if (words_sent == 5'h1f) begin
-						dma_addr <= dma_addr + 32;	
+				if (input_bits[0]) begin
+					// We see the guard bit, meaning mosi_out has the last
+					// bit of input
+					if (!dma_out_full) begin
+						dma_data_out <= {mosi_out, input_bits[31:1]};
+						dma_data_out_strobe <= 1;
+						input_bits <= {1'b1, 31'b0}; // set guard bit;
+					end else begin
+						// err... dma was full, so signal error condition
+						register_dma_overflow <= 1;
 					end
 				end else begin 
-					// Don't see the guard bit
-					input_bits <= {mosi_out, word_in_fifo[31:1]};
+					// Don't see the guard bit - keep shifting
+					input_bits <= {mosi_out, input_bits[31:1]};
 				end
 			end
 		end else begin
-			if (cs_end) begin
-				// Reset on cs low
-				input_bits <= {1'b1, 31'b0}; // set guard bit;
-				dma_addr <= register_dma_dest_addr;
-				words_sent <= 0;
-			end
+			// CS is not active or else we have overflowed
+			input_bits <= {1'b1, 31'b0}; // set guard bit;
 		end
 	end
 end
-
 endmodule
 
+module spi_dma_write_fifo #(
+	parameter integer FIFO_WORDS = 512
+)(
+	input clk,
+	input reset,
 
-// A FIFO that handles both metatstability and edge detection
-module SPI_bit_fifo #(
+	// Start address for dma	
+	input [31:0] dma_addr,
+
+	// Data into fifo
+	input [31:0] dma_data_out,
+	input dma_data_out_strobe,
+
+	// Interface to qpimem_iface
+	output reg qpimem_iface_do_write,
+	input qpimem_iface_next_word,
+	output reg [23:0] qpimem_iface_addr,
+	output [31:0] qpimem_iface_wdata,
+	input qpimem_iface_is_idle,
+
+	// Status
+	output empty,
+	output full
+);
+
+reg [31:0] ram [0:FIFO_WORDS-1];
+reg [$clog2(FIFO_WORDS)-1:0] w_ptr;
+reg [$clog2(FIFO_WORDS)-1:0] r_ptr;
+
+// TODO: This method of determining full means we can only use 
+// 511 of the 512 words. Could do something more clever here.
+assign empty = (r_ptr == w_ptr);
+assign full = (w_ptr == (r_ptr - 1));
+
+// Data to write always sent to qpimem_iface, but will not be
+// written until do_write is detected
+assign qpimem_iface_wdata = ram[r_ptr];
+
+always @(posedge clk) begin
+	if (reset) begin
+		w_ptr <= 0;
+		r_ptr <= 0;
+		empty <= 1;
+		qpimem_iface_addr <= dma_addr[23:0];
+	end else begin 
+		// If there is data available, try to write it
+		if (empty) begin
+			qpimem_iface_do_write <= 0;
+		end else begin
+			qpimem_iface_do_write <= 1;
+			if (qpimem_iface_next_word) begin
+				r_ptr <= r_ptr + 1;
+				qpimem_iface_addr <= qpimem_iface_addr + 4;
+			end
+		end
+
+		// Add data to buffer
+		if (dma_data_out_strobe) begin
+			// Caller should not be trying to write if full, but just in case
+			if (!full) begin
+				ram[w_ptr] <= dma_data_out;
+				w_ptr <= w_ptr + 1;
+			end
+		end
+
+	end
+end
+endmodule;
+
+
+// A bit-wise FIFO that handles metatstability and edge detection
+module spi_bit_fifo #(
 	parameter integer BITS=4
-	) (
-
+) (
 	// Incoming data
 	input in_data,
 
@@ -175,15 +253,17 @@ module SPI_bit_fifo #(
 	output out_data,
 	output is_neg_edge,
 	output is_pos_edge
-	)
+	);
 
 // FIFO: bits added to MSB and taken from LSB
+// Current data in position 1
+// Previous-to-current data in position 0
 reg [BITS-1:0] fifo;
 
 // Assign output from FIFO
-assign out_data = fifo[0];
-assign is_pos_edge = fifo[0] & !fifo[1];
-assign is_neg_edge = !fifo[0] & fifo[1];
+assign out_data = fifo[1]; 
+assign is_pos_edge = fifo[1] & !fifo[0];
+assign is_neg_edge = !fifo[1] & fifo[0];
 
 // Shift data through FIFO
 always @(posedge clk) begin
