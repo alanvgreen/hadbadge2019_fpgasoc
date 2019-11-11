@@ -14,6 +14,6 @@ qpimem_cache_testbench:
 verilator: verilator-build/Vqpitest
 	./verilator-build/Vqpitest
 
-verilator-build/Vqpitest: qpimem_cache.v simple_mem.v simple_mem_words.v verilator_top.v verilator_main.cpp ../psram_emu.cpp
+verilator-build/Vqpitest: qpimem_cache.v simple_mem.v simple_mem_words.v verilator_top.v ../sim/ecp5_io_sim.v verilator_main.cpp ../psram_emu.cpp
 	verilator -CFLAGS "-ggdb" --assert --trace --Mdir verilator-build -Wno-style -Wno-fatal -cc --top-module qpitest --exe $^
 	make OPT_FAST="-O2 -fno-stack-protector" -C verilator-build -f Vqpitest.mk
