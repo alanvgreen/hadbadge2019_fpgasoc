@@ -101,11 +101,6 @@ spi_slave spis(
 );
 
 
-// Translate dma_writers 32 bit output to 24 bits
-assign qpi_addr = dma_writer_mem_addr[23:0];
-wire [31:0] dma_writer_mem_addr;
-
-
 qpimem_iface qpimem_iface(
 	.clk(clk),
 	.rst(rst),

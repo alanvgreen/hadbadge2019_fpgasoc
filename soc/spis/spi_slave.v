@@ -110,8 +110,8 @@ assign MISO = 0;
 
 // Word input FIFO
 reg [31:0] input_bits; // FIFO for word in - 31 bits + 1 bit for guard
-wire [31:0] dma_data_out;
-wire dma_data_out_strobe;
+reg [31:0] dma_data_out;
+reg dma_data_out_strobe;
 wire dma_out_full;
 
 // FIFO for DMA
@@ -140,10 +140,14 @@ always @(posedge clk) begin
 	if (reset | !register_enable) begin
 		// In reset or disabled - same thing
 		input_bits <= {1'b1, 31'b0}; // set guard bit;
+		dma_data_out <= 0;
+		dma_data_out_strobe <= 0;
 	end else begin
 		// Transfer in progress means CS is low
 		if (transfer_in_progress & !register_dma_overflow) begin
-			// TODO: any error checking
+			// Reset strobe
+			dma_data_out_strobe <= 0;
+
 			// Check for clock edge
 			if (sck_edge) begin
 				if (input_bits[0]) begin
@@ -165,6 +169,8 @@ always @(posedge clk) begin
 		end else begin
 			// CS is not active or else we have overflowed
 			input_bits <= {1'b1, 31'b0}; // set guard bit;
+			dma_data_out <= 0;
+			dma_data_out_strobe <= 0;
 		end
 	end
 end
@@ -212,7 +218,6 @@ always @(posedge clk) begin
 	if (reset) begin
 		w_ptr <= 0;
 		r_ptr <= 0;
-		empty <= 1;
 		qpimem_iface_addr <= dma_addr[23:0];
 	end else begin 
 		// If there is data available, try to write it

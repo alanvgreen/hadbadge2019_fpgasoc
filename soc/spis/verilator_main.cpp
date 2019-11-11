@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "Vqpitest.h"
+#include "Vspistest.h"
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 #include "../psram_emu.hpp"
@@ -7,7 +7,7 @@
 uint64_t ts=0;
 uint64_t tracepos=0;
 
-Vqpitest *tb;
+Vspistest *tb;
 Psram_emu *psram;
 VerilatedVcdC *trace;
 
@@ -46,18 +46,6 @@ void do_write(int addr, int data) {
 	doclk();
 }
 
-void do_flush(int addr, int endaddr) {
-	tb->addr=addr;
-	tb->wdata=endaddr;
-	tb->flush=1;
-	do {
-		doclk();
-	} while (tb->ready==0);
-	tb->flush=0;
-	doclk();
-}
-
-
 int do_read(int addr) {
 	int ret;
 	tb->addr=addr;
@@ -76,10 +64,10 @@ int main(int argc, char **argv) {
 	Verilated::commandArgs(argc, argv);
 	Verilated::traceEverOn(true);
 
-	tb = new Vqpitest;
+	tb = new Vspistest;
 	trace = new VerilatedVcdC;
 	tb->trace(trace, 99);
-	trace->open("qpitesttrace.vcd");
+	trace->open("spistest.vcd");
 	psram = new Psram_emu(8*1024*1024);
 	psram->force_qpi();
 
@@ -91,6 +79,8 @@ int main(int argc, char **argv) {
 	doclk();
 	doclk();
 
+/*
+
 	do_read(0x20000); //dummy because ?????
 	do_write(0x10001, 0xdeadbeef);
 	do_write(0x10002, 0xcafebabe);
@@ -98,7 +88,7 @@ int main(int argc, char **argv) {
 	CHECK(do_read(0x10001)==0xdeadbeef);
 	CHECK(do_read(0x10002)==0xcafebabe);
 
-	do_flush(0, 64);
+    do_flush(0, 64);
 
 
 	printf("Writing...\n");
@@ -118,6 +108,7 @@ int main(int argc, char **argv) {
 		if (td!=d) printf("It %d, addr %d: wrote %x read %x\n", i, a, d, td);
 	}
 
+*/
 
 	trace->flush();
 
