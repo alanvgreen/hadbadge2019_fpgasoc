@@ -36,7 +36,6 @@ int do_abort=0;
 uint64_t ts=0;
 uint64_t tracepos=0;
 
-
 double sc_time_stamp() {
 	return ts;
 }
@@ -60,7 +59,7 @@ int main(int argc, char **argv) {
 #endif
 
 	tb->btn=0xff; //no buttons pressed
-	int do_trace=1;
+	int do_trace=0;
 
 	Psram_emu psrama=Psram_emu(8*1024*1024);
 	Psram_emu psramb=Psram_emu(8*1024*1024);
@@ -89,7 +88,7 @@ int main(int argc, char **argv) {
 	int abort_timer=0;
 	tb->rst = 1;
 
-	while(ts < 100000) {
+	while(ts < 128 * 1024) {
 		ts++;
 		clkint+=123;
 		tb->clkint=(clkint&0x100)?1:0;
@@ -139,6 +138,7 @@ int main(int argc, char **argv) {
 		}
 
 		do_trace = tb->trace_en;
+
 		if (vid && pixel_clk) {
 			vid->next_pixel(tb->vid_red, tb->vid_green, tb->vid_blue, &fetch_next, &next_line, &next_field);
 			tb->vid_fetch_next=fetch_next;

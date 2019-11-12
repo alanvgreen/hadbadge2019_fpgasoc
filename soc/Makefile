@@ -143,6 +143,12 @@ SRC += $(addprefix audio/, \
 	synth_rng.v \
 )
 
+	# SPI Slave
+SRC += $(addprefix spis/, \
+	spi_slave.v \
+)
+
+
 	# HDMI
 SRC_SYNTH += $(addprefix hdmi/, \
 	clk_8_250_125_25.v \

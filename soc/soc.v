@@ -362,6 +362,10 @@ module soc(
 	reg audio_select;
 	wire audio_ready;
 
+	reg spis_select;
+	wire [31:0] spis_rdata;
+	wire spis_ready;
+
 	wire [31:0] soc_version;
 `ifdef verilator
 	assign soc_version = 'h8000;
@@ -421,6 +425,7 @@ module soc(
 		audio_select = 0;
 		psram_select = 0;
 		linerenderer_select=0;
+		spis_select = 0;
 		bus_error = 0;
 		mem_rdata = 'hx;
 		if (mem_addr[31:28]=='h1) begin
@@ -496,6 +501,9 @@ module soc(
 		end else if (mem_addr[31:28]=='h9) begin
 			psram_select = mem_valid;
 			mem_rdata = psram_rdata;
+		end else if (mem_addr[31:28]=='hA) begin
+			spis_select = mem_valid;
+			mem_rdata = spis_rdata;
 		end else begin
 			//Bus error. Raise IRQ if memory is accessed.
 			mem_rdata = 'hDEADBEEF;
@@ -512,7 +520,8 @@ module soc(
 `endif
 
 	assign mem_ready = ram_ready || uart_ready || irda_ready || misc_select ||
-			lcd_ready || linerenderer_ready || usb_ready || pic_ready || audio_ready || psram_ready ||| bus_error;
+			lcd_ready || linerenderer_ready || usb_ready || pic_ready || audio_ready ||
+			psram_ready || spis_ready || bus_error;
 
 	dsadc dsadc (
 		.clk(clk48m),
@@ -714,7 +723,7 @@ module soc(
 	wire [31:0] qpi_wdata;
 	reg qpi_is_idle;
 
-	parameter integer QPI_MASTERCNT = 2;
+	parameter integer QPI_MASTERCNT = 3;
 
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_addr;
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_wdata;
@@ -779,8 +788,41 @@ module soc(
 		.ready(ram_ready)
 	);
 
-	wire irq_copper;
+	wire spis_sck;
+	assign spis_sck = genio_in[0];
+	wire spis_mosi;
+	assign spis_mosi = genio_in[1];
+	wire spis_miso;
+	assign spis_miso = genio_out[2];
+	wire spis_cs;
+	assign spis_cs = genio_in[27];
 
+	spi_slave spis(
+		.clk(clk48m),
+		.reset(rst),
+
+		// Bus - used to read and write registers
+		.register_num(mem_addr[4:2]),
+		.data_in(mem_wdata),
+		.data_out(spis_rdata),
+		.wen(spis_select?mem_wstrb:4'b0000),
+		.ren(spis_select && mem_wstrb==4'b0000),
+		.ready(spis_ready),
+
+		// Interface to qpimem_arb
+		.qpimem_arb_do_write(qpimem_arb_do_write[1]),
+		.qpimem_arb_next_word(qpimem_arb_next_word[1]),
+		.qpimem_arb_addr(`SLICE_32(qpimem_arb_addr, 1)),
+		.qpimem_arb_wdata(`SLICE_32(qpimem_arb_wdata, 1)),
+
+		// Signals from outside pins
+		.SCK(spis_sck),
+		.MOSI(spis_mosi),
+		.MISO(spis_miso),
+		.CS(spis_cs)
+	);
+
+	wire irq_copper;
 	vid_linerenderer linerenderer (
 		.clk(clk48m),
 		.reset(rst),
@@ -801,16 +843,16 @@ module soc(
 		.curr_vid_addr(curr_vid_addr),
 		.next_field(next_field),
 
-		.m_do_read(qpimem_arb_do_read[1]),
-		.m_next_word(qpimem_arb_next_word[1]),
-		.m_addr(`SLICE_32(qpimem_arb_addr, 1)),
-		.m_rdata(`SLICE_32(qpimem_arb_rdata, 1)),
-		.m_is_idle(qpimem_arb_is_idle[1])
+		.m_do_read(qpimem_arb_do_read[2]),
+		.m_next_word(qpimem_arb_next_word[2]),
+		.m_addr(`SLICE_32(qpimem_arb_addr, 2)),
+		.m_rdata(`SLICE_32(qpimem_arb_rdata, 2)),
+		.m_is_idle(qpimem_arb_is_idle[2])
 	);
 
 	//video renderer does not write
-	assign qpimem_arb_do_write[1] = 0;
-	assign `SLICE_32(qpimem_arb_wdata, 1) = 0;
+	assign qpimem_arb_do_write[2] = 0;
+	assign `SLICE_32(qpimem_arb_wdata, 2) = 0;
 
 
 	// PSRAM QPI interface

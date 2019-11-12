@@ -16,7 +16,7 @@ module spi_slave(
 	output [31:0] data_out,
 	input wen,
 	input ren,
-	output ready,
+	output wire ready,
 
 	// Interface to qpimem_arb
 	output qpimem_arb_do_write,
@@ -49,7 +49,15 @@ reg [31:0] register_words_received;
 // chip select is active low
 assign transfer_in_progress = !cs_out;
 
-assign ready = 1;
+// Drive Bus
+// todo: replace inputs with bus_cyc, bus_ack and bus_we
+wire r1;
+assign r1 = (wen | ren) & ! r2;
+reg r2;
+always @(posedge clk) begin
+	r2 <= r1;
+end
+assign ready = r2;
 
 // Register handling
 always @(posedge clk) begin
