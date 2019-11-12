@@ -49,7 +49,6 @@ int main(int argc, char **argv) {
 	// Create an instance of our module under test
 	Vsoc *tb = new Vsoc;
 	//Create trace
-
 #if VERILATOR_USE_VCD
 	VerilatedVcdC *trace = new VerilatedVcdC;
 	tb->trace(trace, 3);
@@ -90,7 +89,7 @@ int main(int argc, char **argv) {
 	int abort_timer=0;
 	tb->rst = 1;
 
-	while(1) {
+	while(ts < 100000) {
 		ts++;
 		clkint+=123;
 		tb->clkint=(clkint&0x100)?1:0;
@@ -130,7 +129,7 @@ int main(int argc, char **argv) {
 					&v);
 			tb->soc__DOT__qspi_phy_psramb_I__DOT__spi_io_ir = v;
 
-			//uart.eval(tb->clk48m, tb->uart_tx, &rx);
+			uart.eval(tb->clk48m, tb->uart_tx, &rx);
 
 			tb->clk48m = (c >> 1) & 1;
 			tb->clk96m = (c     ) & 1;
