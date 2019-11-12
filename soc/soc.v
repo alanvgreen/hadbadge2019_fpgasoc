@@ -805,9 +805,10 @@ module soc(
 		.register_num(mem_addr[4:2]),
 		.data_in(mem_wdata),
 		.data_out(spis_rdata),
-		.wen(spis_select?mem_wstrb:4'b0000),
-		.ren(spis_select && mem_wstrb==4'b0000),
-		.ready(spis_ready),
+		
+		.bus_cyc(spis_select),
+		.bus_ack(spis_ready),
+		.bus_we(spis_select && mem_wstrb != 4'b0),
 
 		// Interface to qpimem_arb
 		.qpimem_arb_do_write(qpimem_arb_do_write[1]),
