@@ -309,8 +309,12 @@ always @(posedge clk) begin
 			end			
 		end else if (dma_count == 1) begin
 			// DMA about to finish - hold write low one more cycle, then claim finished
-			dma_count <= 0;
-			qpimem_arb_do_write <= 0; // Just to be sure
+			if (qpimem_arb_next_word) begin
+				r_ptr <= r_ptr + 1;
+				qpimem_arb_addr <= qpimem_arb_addr + 4;
+				dma_count <= 0;
+				qpimem_arb_do_write <= 0; // Just to be sure
+			end
 		end else /* (dma_count >= 2) */ begin
 			// DMA running - raise do_write signal
 			qpimem_arb_do_write <= 1; // may be overridden below
@@ -329,7 +333,7 @@ always @(posedge clk) begin
 		end 
 	end
 end 
-endmodule;
+endmodule
 
 
 // A bit-wise FIFO that handles metatstability and edge detection

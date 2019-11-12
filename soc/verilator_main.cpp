@@ -25,6 +25,122 @@
 #include "video/video_renderer.hpp"
 #include "video/lcd_renderer.hpp"
 
+////////////////////////////////////////
+
+uint64_t spis_next_pos;
+uint32_t spis_word_val;
+uint32_t bit_counter;
+enum spis_state_t { NOT_STARTED, WAITING_TO_START, SELECTED, SENDING, STOPPING, STOPPED } spis_state;
+
+uint32_t genio_in;
+
+void set_mosi(bool input) {
+	if (input) {
+		genio_in |= 2;
+	} else {
+		genio_in &= 0xfffd;
+	}
+}
+void set_sck(bool input) {
+	if (input) {
+		genio_in |= 1;
+	} else {
+		genio_in &= 0xfffe;
+	}
+}
+bool is_sck_high() {
+	return genio_in & 1;
+}
+
+
+bool manywords(int word, uint32_t* out) {
+	*out = (uint32_t) word;
+	return word >= 320;
+}
+
+typedef bool (*nextwordfn_t)(int word, uint32_t* out);
+struct spis_txn_t {
+	uint64_t cs_start; // timestamp
+	uint64_t cs_holdoff; // ns
+	nextwordfn_t nextwordfn;
+	uint64_t cs_holdon;
+};
+
+
+#define SPIS_HALF_TICK 31
+
+spis_txn_t spis_txn = { 20 * 100 * 1000, 50, manywords, 50};
+
+bool get_next_bit(bool *input) {
+	bool done = false;
+	int bit_num = bit_counter & 0x1f;
+	if (bit_num == 0) {
+		done = spis_txn.nextwordfn(bit_counter >> 5, &spis_word_val);
+	} 
+	*input = !!(spis_word_val & (1 << bit_num));
+	bit_counter++;
+	return done;
+}
+
+uint32_t spis_get(uint64_t pos) {
+	if (pos < spis_next_pos) {
+		return genio_in;
+	}
+	bool input;
+	switch (spis_state) {
+		case NOT_STARTED:
+			set_sck(true);
+			genio_in |= 1 << 27; // set cs high
+			spis_next_pos += spis_txn.cs_start;
+			spis_state = WAITING_TO_START;
+			break;
+		case WAITING_TO_START:
+			genio_in &= ~(1<<27);  // set cs low
+			spis_next_pos += spis_txn.cs_holdoff;
+			spis_state = SELECTED;
+			break;
+		case SELECTED:		
+			bit_counter = 0;
+			get_next_bit(&input);
+			set_mosi(input);
+			set_sck(false);
+			spis_next_pos += SPIS_HALF_TICK;
+			spis_state = SENDING;
+			break;
+		case SENDING:
+			if (is_sck_high()) {
+				// clock high - get data ready and set clock low
+				bool done = get_next_bit(&input);
+				if (done) {
+					spis_next_pos += spis_txn.cs_holdon;
+					spis_state = STOPPING;
+				} else {
+					set_mosi(input);
+					set_sck(false);
+					spis_next_pos += SPIS_HALF_TICK;
+				}
+			} else {
+				set_sck(true);
+				spis_next_pos += SPIS_HALF_TICK;
+			}
+			break;
+		case STOPPING:
+			// Actually, go again
+			genio_in |= 1 << 27; // set cs high
+			spis_next_pos += spis_txn.cs_start;
+			spis_state = WAITING_TO_START;
+
+			//spis_next_pos = 1e9;
+			//spis_state = STOPPED;
+			break;
+	}
+
+	return genio_in;
+}
+
+
+/////////////////////////////////////////
+
 int uart_get(int ts) {
 	return 1;
 }
@@ -59,7 +175,7 @@ int main(int argc, char **argv) {
 #endif
 
 	tb->btn=0xff; //no buttons pressed
-	int do_trace=0;
+	int do_trace=1;
 
 	Psram_emu psrama=Psram_emu(8*1024*1024);
 	Psram_emu psramb=Psram_emu(8*1024*1024);
@@ -88,11 +204,14 @@ int main(int argc, char **argv) {
 	int abort_timer=0;
 	tb->rst = 1;
 
-	while(ts < 128 * 1024) {
+	while(ts < 2 * 1024 * 1024) {
 		ts++;
 		clkint+=123;
 		tb->clkint=(clkint&0x100)?1:0;
-		if (do_trace) tracepos++;
+
+		//if (do_trace) tracepos++;
+		tracepos = ts;
+
 		if (do_abort) {
 			//Continue for a bit after abort has been signalled.
 			abort_timer++;
@@ -132,6 +251,10 @@ int main(int argc, char **argv) {
 
 			tb->clk48m = (c >> 1) & 1;
 			tb->clk96m = (c     ) & 1;
+
+			tb->genio_in = spis_get(ts*20 + c*5 - 2);
+			if (do_trace) trace->dump(tracepos*20 + c*5 - 2);
+
 			tb->eval();
 
 			if (do_trace) trace->dump(tracepos*20 + c*5);
