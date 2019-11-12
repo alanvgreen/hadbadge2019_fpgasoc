@@ -89,7 +89,6 @@ module qpimem_iface #(
 	
 	input do_read,
 	input do_write,
-	input acked_writes,
 	output reg next_word,
 	input [23:0] addr,
 	input [31:0] wdata,
@@ -294,10 +293,9 @@ always @(posedge clk) begin
 			end else begin //write
 				spi_sout_u <= data_shifted[bitno*4+3 -: 4];
 				if (bitno==0) begin
-					if (!keep_transferring | (acked_writes & !do_write)) begin
-						//if aced_writes is not set, host may react on next_word going high by putting one
-						//last word on the bus, then lowering do_write. This is why we use keep_transfering
-						//instead of do_write.
+					//note host may react on next_word going high by putting one last word on the bus, then
+					//lowering do_write. This is why we use keep_transfering instead of do_write
+					if (!keep_transferring) begin //abort?
 						state <= STATE_TRANSEND;
 					end else begin
 						data_shifted <= wdata_be;

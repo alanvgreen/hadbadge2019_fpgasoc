@@ -77,7 +77,6 @@ wire [32*QPI_MASTERCNT-1:0] qpimem_arb_wdata;
 wire [32*QPI_MASTERCNT-1:0] qpimem_arb_rdata;
 wire [QPI_MASTERCNT-1:0] qpimem_arb_do_read;
 wire [QPI_MASTERCNT-1:0] qpimem_arb_do_write;
-wire [QPI_MASTERCNT-1:0] qpimem_arb_acked_writes;
 wire [QPI_MASTERCNT-1:0] qpimem_arb_next_word;
 wire [QPI_MASTERCNT-1:0] qpimem_arb_is_idle;
 
@@ -105,16 +104,14 @@ spi_slave spis(
 	.MISO(spis_miso),
 	.CS(spis_ncs)
 );
-assign qpimem_arb_acked_writes[0] = 1;
 
 
 // qpimem interface
 wire qpi_do_read;
 assign qpi_do_read = 0;
 wire qpi_do_write;
-wire qpi_acked_writes;
 reg qpi_next_word;
-wire [23:0] qpi_addr;
+wire [31:0] qpi_addr;
 reg [31:0] qpi_rdata;
 wire [31:0] qpi_wdata;
 reg qpi_is_idle;
@@ -130,7 +127,6 @@ qpimem_arbiter #(
 	.rdata(qpimem_arb_rdata),
 	.do_read(qpimem_arb_do_read),
 	.do_write(qpimem_arb_do_write),
-	.acked_writes(qpimem_arb_acked_writes),
 	.next_word(qpimem_arb_next_word),
 	.is_idle(qpimem_arb_is_idle),
 
@@ -138,7 +134,6 @@ qpimem_arbiter #(
 	.s_wdata(qpi_wdata),
 	.s_rdata(qpi_rdata),
 	.s_do_write(qpi_do_write),
-	.s_acked_writes(qpi_acked_writes),
 	.s_do_read(qpi_do_read),
 	.s_is_idle(qpi_is_idle),
 	.s_next_word(qpi_next_word)
@@ -150,7 +145,6 @@ qpimem_iface qpimem_iface(
 	
 	.do_read(qpi_do_read),
 	.do_write(qpi_do_write),
-	.acked_writes(qpi_acked_writes),
 	.next_word(qpi_next_word),
 	.addr(qpi_addr),
 	.wdata(qpi_wdata),

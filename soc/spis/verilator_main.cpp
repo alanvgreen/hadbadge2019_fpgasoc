@@ -22,6 +22,11 @@ bool ten_words(int word, uint32_t* out) {
 	return word >= 10;
 }
 
+bool manywords(int word, uint32_t* out) {
+	*out = (uint32_t) word;
+	return word >= 100;
+}
+
 typedef bool (*nextwordfn_t)(int word, uint32_t* out);
 struct spis_txn_t {
 	uint64_t cs_start; // timestamp
@@ -30,7 +35,7 @@ struct spis_txn_t {
 	uint64_t cs_holdon;
 };
 
-spis_txn_t spis_txn { 522, 50, ten_words, 50};
+spis_txn_t spis_txn { 522, 50, manywords, 50};
 enum spis_state_t { NOT_STARTED, SELECTED, SENDING, STOPPING, STOPPED } spis_state;
 uint64_t spis_next_event;
 uint32_t spis_word_val;
@@ -173,7 +178,7 @@ int main(int argc, char **argv) {
 	do_write(0x0, 0x1);
 	do_write(0x4, 0x40010000);
 
-	while (ts < 100000) {
+	while (ts < 1024 * 1024) {
 		doclk();
 	}
 
