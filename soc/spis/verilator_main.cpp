@@ -132,22 +132,24 @@ int doclk() {
 void do_write(int addr, int data) {
 	tb->addr=addr;
 	tb->wdata=data;
-	tb->wen=0xf;
+	tb->select=1;
+	tb->wstrb=0xf;
 	do {
 		doclk();
-	} while (tb->ready==0);
-	tb->wen=0;
+	} while (tb->bus_ack==0);
+	tb->select=0;
+	tb->wstrb=0;
 	doclk();
 }
 
 int do_read(int addr) {
 	int ret;
 	tb->addr=addr;
-	tb->ren=1;
+	tb->select=1;
 	do {
 		doclk();
-	} while (tb->ready==0);
-	tb->ren=0;
+	} while (tb->bus_ack==0);
+	tb->select=0;
 	ret=tb->rdata;
 	doclk();
 	return ret;

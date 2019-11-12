@@ -14,9 +14,10 @@ module spi_slave(
 	input [2:0] register_num, 
 	input [31:0] data_in,
 	output [31:0] data_out,
-	input wen,
-	input ren,
-	output wire ready,
+
+	input  wire bus_cyc,
+	output wire bus_ack,
+	input  wire bus_we,
 
 	// Interface to qpimem_arb
 	output qpimem_arb_do_write,
@@ -51,13 +52,13 @@ assign transfer_in_progress = !cs_out;
 
 // Drive Bus
 // todo: replace inputs with bus_cyc, bus_ack and bus_we
-wire r1;
-assign r1 = (wen | ren) & ! r2;
-reg r2;
+wire next_ack;
+assign next_ack = bus_cyc & !ack;
+reg ack;
 always @(posedge clk) begin
-	r2 <= r1;
+	ack <= next_ack;
 end
-assign ready = r2;
+assign bus_ack = ack;
 
 // Register handling
 always @(posedge clk) begin
@@ -67,30 +68,31 @@ always @(posedge clk) begin
 		register_dma_overflow <= 0;
 		register_words_received <= 0;
 	end else begin
-		if (wen) begin
-			case (register_num) 
-				0: begin 
-					register_enable <= data_in[0];
-					register_dma_overflow<= data_in[2];
-				end
-				1: register_dma_dest_addr <= data_in;
-				2: register_words_received <= data_in;
-				default: /*nop*/;
-			endcase
-		end
-		if (ren) begin
-			case (register_num) 
-				0: data_out <= {
-						28'b0, 
-						register_in_transaction,
-						register_dma_overflow, 
-						transfer_in_progress, 
-						register_enable
-					};
-				1: data_out <= register_dma_dest_addr;
-				2: data_out <= register_words_received;
-				default: data_out <= 0;
-			endcase
+		if (bus_cyc) begin
+			if (bus_we) begin
+				case (register_num) 
+					0: begin 
+						register_enable <= data_in[0];
+						register_dma_overflow<= data_in[2];
+					end
+					1: register_dma_dest_addr <= data_in;
+					2: register_words_received <= data_in;
+					default: /*nop*/;
+				endcase
+			end else begin
+				case (register_num) 
+					0: data_out <= {
+							28'b0, 
+							register_in_transaction,
+							register_dma_overflow, 
+							transfer_in_progress, 
+							register_enable
+						};
+					1: data_out <= register_dma_dest_addr;
+					2: data_out <= register_words_received;
+					default: data_out <= 0;
+				endcase
+			end
 		end
 	end
 end

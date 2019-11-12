@@ -42,9 +42,9 @@ module spistest(
 	input [21:0] addr,
 	output [31:0] wdata,
 	output [31:0] rdata,
-	input [3:0] wen,
-	input ren,
-	output ready,
+	input [3:0] wstrb,
+	input select,
+	output bus_ack,
 
 	// SQI/QPI pins for memory chips
 	output spi_clk,
@@ -88,9 +88,9 @@ spi_slave spis(
 	.register_num(addr[4:2]),
 	.data_in(wdata),
 	.data_out(rdata),
-	.wen(wen == 4'hf),
-	.ren(ren),
-	.ready(ready),
+	.bus_cyc(select),
+	.bus_ack(bus_ack),
+	.bus_we(wstrb != 4'b0),
 
 	// Interface to qpimem_arb
 	.qpimem_arb_do_write(qpimem_arb_do_write[0]),
