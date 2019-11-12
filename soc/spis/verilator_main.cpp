@@ -24,7 +24,7 @@ bool ten_words(int word, uint32_t* out) {
 
 bool manywords(int word, uint32_t* out) {
 	*out = (uint32_t) word;
-	return word >= 100;
+	return word >= 1024;
 }
 
 typedef bool (*nextwordfn_t)(int word, uint32_t* out);
@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
 	do_write(0x0, 0x1);
 	do_write(0x4, 0x40010000);
 
-	while (ts < 1024 * 1024) {
+	while (ts < 2 * 1024 * 1024) {
 		doclk();
 	}
 
