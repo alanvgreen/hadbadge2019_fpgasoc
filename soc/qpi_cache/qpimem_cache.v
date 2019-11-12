@@ -125,7 +125,7 @@ always @(posedge clk)
 simple_mem_words #(
 	.WORDS(CACHELINE_CT*CACHELINE_WORDS),
 `ifdef verilator
-	.INITIAL_HEX("../rom.hex")
+	.INITIAL_HEX("rom.hex")
 `else
 	.INITIAL_HEX("rom_random_seeds0x123456.hex")
 `endif

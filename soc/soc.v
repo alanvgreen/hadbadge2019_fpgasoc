@@ -695,7 +695,8 @@ module soc(
 
 	pdm #(
 		.WIDTH(16),
-		.DITHER("YES")
+		.DITHER("YES"),
+		.PHY("ALWAYS_ON")
 	) audio_pdm_I (
 		.in(audio_pdm),
 		.pdm(pwmout),
