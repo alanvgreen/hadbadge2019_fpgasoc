@@ -41,6 +41,11 @@
  *  Common rate: 115200 -> 24, 38400 -> 76, 19200 -> 154, 9600 -> 310 */
 #define UART_IRDA_DIV_REG	0x14
 
+#define UART_2_DATA_REG   0x20
+/** UART divisor register. Baud rate used by the UART is 48MHz/(UART_DIV_REG+2).
+    Common rates: 115200 -> 414, 38400 -> 1248, 19200 -> 2498, 9600 -> 4998 */
+#define UART_2_DIV_REG    0x24
+
 /* -------------- Misc register block defines --------------------- */
 
 /** Start of memory range for the 'misc' peripheral, containing all sorts of

@@ -339,6 +339,11 @@ module soc(
 	reg  irda_select;
 	wire irda_ready;
 
+	// UART2
+	wire [31:0] uart2_rdata;
+	reg  uart2_select;
+	wire uart2_ready;
+
 	reg misc_select;
 	wire[31:0] ram_rdata;
 	reg ram_ready;
@@ -418,6 +423,7 @@ module soc(
 		mem_select = 0;
 		uart_select = 0;
 		irda_select = 0;
+		uart2_select = 0;
 		misc_select = 0;
 		lcd_select = 0;
 		usb_select = 0;
@@ -429,12 +435,15 @@ module soc(
 		bus_error = 0;
 		mem_rdata = 'hx;
 		if (mem_addr[31:28]=='h1) begin
-			if (mem_addr[4] == 1'b0) begin
+			if (mem_addr[5:4] == 2'h0) begin
 				uart_select = mem_valid;
 				mem_rdata = uart_rdata;
-			end else begin
+			end else if (mem_addr[5:4] == 2'h1) begin
 				irda_select = mem_valid;
 				mem_rdata = irda_rdata;
+			end else begin 
+				uart2_select = mem_valid;
+				mem_rdata = uart2_rdata;
 			end
 		end else if (mem_addr[31:28]=='h2) begin
 			misc_select = mem_valid;
@@ -519,7 +528,7 @@ module soc(
 	end
 `endif
 
-	assign mem_ready = ram_ready || uart_ready || irda_ready || misc_select ||
+	assign mem_ready = ram_ready || uart_ready || irda_ready || uart2_ready || misc_select ||
 			lcd_ready || linerenderer_ready || usb_ready || pic_ready || audio_ready ||
 			psram_ready || spis_ready || bus_error;
 
@@ -629,8 +638,8 @@ module soc(
 		.DW(32),
 		.IRDA(0)
 	) uart_I (
-		.uart_tx(uart_tx),
-		.uart_rx(uart_rx),
+		.uart_tx(genio[30]),
+		.uart_rx(genio[29]),
 		.bus_addr(mem_addr[3:2]),
 		.bus_wdata(mem_wdata),
 		.bus_rdata(uart_rdata),
@@ -654,6 +663,24 @@ module soc(
 		.bus_rdata(irda_rdata),
 		.bus_cyc(irda_select),
 		.bus_ack(irda_ready),
+		.bus_we(mem_wstrb != 0),
+		.clk(clk48m),
+		.rst(rst)
+	);
+
+	uart_wb #(
+		.FIFO_DEPTH(16),
+		.DIV_WIDTH(16),
+		.DW(32),
+		.IRDA(0)
+	) uart_I (
+		.uart_tx(uart2_tx),  // FIX
+		.uart_rx(uart2_rx),  // FIX
+		.bus_addr(mem_addr[3:2]),
+		.bus_wdata(mem_wdata),
+		.bus_rdata(uart2_rdata),
+		.bus_cyc(uart2_select),
+		.bus_ack(uart2_ready),
 		.bus_we(mem_wstrb != 0),
 		.clk(clk48m),
 		.rst(rst)
