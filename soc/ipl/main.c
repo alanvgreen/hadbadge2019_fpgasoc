@@ -530,7 +530,7 @@ extern uint32_t *irq_stack_ptr;
 
 #define IRQ_STACK_SIZE (16*1024)
 
-uint32_t * const SPIS = (uint32_t *)(void *)(0xa0000000);
+uint32_t * const SPIS = (uint32_t *)(void *)(SPIS_OFFSET);
 
 void main() {
 	syscall_reinit();

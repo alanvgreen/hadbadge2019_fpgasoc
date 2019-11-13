@@ -589,3 +589,12 @@ but this should get you started.
 #define PSRAM_CMD_QPI_WR_32B	0x34
 #define PSRAM_CMD_QPI_RD_16B	0x38
 #define PSRAM_CMD_QPI_RD_32B	0x3C
+
+
+/* -------------- SPI slave defines --------------------- */
+
+#define SPIS_OFFSET        0xA0000000
+#define SPIS_CONTROL_REG   0x00
+#define SPIS_DATA_ADDR_REG 0x04
+#define SPIS_RECV_LEN_REG  0x08
+
