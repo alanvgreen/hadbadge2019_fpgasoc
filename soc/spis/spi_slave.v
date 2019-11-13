@@ -13,7 +13,7 @@ module spi_slave(
 	// Bus - used to read and write registers
 	input [2:0] register_num, 
 	input [31:0] data_in,
-	output [31:0] data_out,
+	output reg [31:0] data_out,
 
 	input  wire bus_cyc,
 	output wire bus_ack,
@@ -22,7 +22,7 @@ module spi_slave(
 	// Interface to qpimem_arb
 	output qpimem_arb_do_write,
 	input qpimem_arb_next_word,
-	output [31:0] qpimem_arb_addr,
+	output reg [31:0] qpimem_arb_addr,
 	output [31:0] qpimem_arb_wdata,
 
 	// Signals from outside pins
@@ -37,7 +37,7 @@ module spi_slave(
 // Reg 0 - Control and status;
 reg register_enable; // bit 0 (r/w)
 wire transfer_in_progress; // bit 1 (ro)
-reg register_dma_overflow; // bit 2 (r/w) 
+reg register_dma_overflow; // bit 2 (ro) - renable to reset 
 reg register_in_transaction; // bit 3 (ro)
 
 
@@ -66,17 +66,15 @@ always @(posedge clk) begin
 		register_dma_dest_addr <= 0;
 		register_enable <= 0;
 		register_dma_overflow <= 0;
-		register_words_received <= 0;
 	end else begin
 		if (bus_cyc) begin
 			if (bus_we) begin
 				case (register_num) 
 					0: begin 
 						register_enable <= data_in[0];
-						register_dma_overflow<= data_in[2];
 					end
 					1: register_dma_dest_addr <= data_in;
-					2: register_words_received <= data_in;
+					// can't write: register_words_received <= data_in;
 					default: /*nop*/;
 				endcase
 			end else begin
@@ -168,8 +166,8 @@ always @(posedge clk) begin
 		dma_data_out <= 0;
 		dma_data_out_strobe <= 0;
 		dma_data_out_flush <= 0;
-		register_dma_overflow <= 0;
 		register_in_transaction <= 0;
+		register_words_received <= 0;
 	end else begin
 		// Set strobes default off 
 		dma_data_out_strobe <= 0;
@@ -271,12 +269,8 @@ always @(posedge clk) begin
 		qpimem_arb_addr <= dma_addr;
 		flushing <= 0;
 		finished <= 0;
-	end
-end
-
-// Incoming data - wite to buffer buffer
-always @(posedge clk) begin
-	if (!reset) begin
+	end else begin
+		// Incoming data - wite to buffer buffer
 		if (dma_data_out_strobe) begin
 			// Caller should not be trying to write if full, but just in case
 			if (!full) begin
@@ -284,50 +278,45 @@ always @(posedge clk) begin
 				w_ptr <= w_ptr + 1;
 			end
 		end
-	end
-end
 
-// Read from buffer write to QPI MEM
-always @(posedge clk) begin
-	if (reset | finished) begin
-		// Don't do anything if in reset or finished. 
-		// Start again when reset is finished
-	end else begin
-		// Normal running mode
-		if (dma_count == 0) begin
-			// No DMA running - determine whether we should start
-			if (flushing) begin
-				// Have finished a flush - we're done
-				finished <= 1;
-			end else if (flush) begin
-				// Start a flush
-				dma_count <= wr_diff; // which may be zero or one
-				//  BUG: if dma starts with count == 1, it will fail
-				flushing <= 1;
-			end else if (wr_diff >= PART_WRITE_SIZE) begin
-				dma_count <= PART_WRITE_SIZE;
-			end			
-		end else if (dma_count == 1) begin
-			// DMA about to finish - hold write low one more cycle, then claim finished
-			if (qpimem_arb_next_word) begin
-				r_ptr <= r_ptr + 1;
-				qpimem_arb_addr <= qpimem_arb_addr + 4;
-				dma_count <= 0;
-				qpimem_arb_do_write <= 0; // Just to be sure
-			end
-		end else /* (dma_count >= 2) */ begin
-			// DMA running - raise do_write signal
-			qpimem_arb_do_write <= 1; // may be overridden below
+		// Outgoing data - only do if not finished
+		if (!finished) begin
+			// Normal running mode
+			if (dma_count == 0) begin
+				// No DMA running - determine whether we should start
+				if (flushing) begin
+					// Have finished a flush - we're done
+					finished <= 1;
+				end else if (flush) begin
+					// Start a flush
+					dma_count <= wr_diff; // which may be zero or one
+					//  BUG: if dma starts with count == 1, it will fail
+					flushing <= 1;
+				end else if (wr_diff >= PART_WRITE_SIZE) begin
+					dma_count <= PART_WRITE_SIZE;
+				end			
+			end else if (dma_count == 1) begin
+				// DMA about to finish - hold write low one more cycle, then claim finished
+				if (qpimem_arb_next_word) begin
+					r_ptr <= r_ptr + 1;
+					qpimem_arb_addr <= qpimem_arb_addr + 4;
+					dma_count <= 0;
+					qpimem_arb_do_write <= 0; // Just to be sure
+				end
+			end else /* (dma_count >= 2) */ begin
+				// DMA running - raise do_write signal
+				qpimem_arb_do_write <= 1; // may be overridden below
 
-			// On next_word, put next word on bus
-			if (qpimem_arb_next_word) begin
-				r_ptr <= r_ptr + 1;
-				qpimem_arb_addr <= qpimem_arb_addr + 4;
-				dma_count <= dma_count - 1;
+				// On next_word, put next word on bus
+				if (qpimem_arb_next_word) begin
+					r_ptr <= r_ptr + 1;
+					qpimem_arb_addr <= qpimem_arb_addr + 4;
+					dma_count <= dma_count - 1;
 
-				// If about to write last word, then lower write signal
-				if (dma_count == 2) begin
-					qpimem_arb_do_write <= 0;
+					// If about to write last word, then lower write signal
+					if (dma_count == 2) begin
+						qpimem_arb_do_write <= 0;
+					end
 				end
 			end
 		end 
@@ -369,4 +358,4 @@ always @(posedge clk) begin
 		fifo <= {in_data, fifo[BITS-1:1]};
 	end
 end
-endmodule;
+endmodule

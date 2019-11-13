@@ -111,7 +111,6 @@ module soc(
 		output reg trace_en
 	);
 
-
 	reg fpga_reload=0;
 	assign programn = ~fpga_reload;
 
@@ -638,8 +637,8 @@ module soc(
 		.DW(32),
 		.IRDA(0)
 	) uart_I (
-		.uart_tx(genio[30]),
-		.uart_rx(genio[29]),
+		.uart_tx(uart_tx),
+		.uart_rx(uart_rx),
 		.bus_addr(mem_addr[3:2]),
 		.bus_wdata(mem_wdata),
 		.bus_rdata(uart_rdata),
@@ -673,9 +672,9 @@ module soc(
 		.DIV_WIDTH(16),
 		.DW(32),
 		.IRDA(0)
-	) uart_I (
-		.uart_tx(uart2_tx),  // FIX
-		.uart_rx(uart2_rx),  // FIX
+	) uart2_I (
+		.uart_tx(genio_out[29]), 
+		.uart_rx(genio_in[28]),
 		.bus_addr(mem_addr[3:2]),
 		.bus_wdata(mem_wdata),
 		.bus_rdata(uart2_rdata),
@@ -1020,6 +1019,14 @@ module soc(
 			flash_dmaaddr <= 0;
 			flash_rdaddr <= 0;
 			flash_dmalen <= 0;
+			// These are the genio pins used by spi_slave and uart2
+			genio_oe[0] <= 0;  // spis_sck
+			genio_oe[1] <= 0;  // spis_mosi
+			genio_oe[2] <= 1;  // spis_miso (output)
+			genio_oe[27] <= 0; // spis_cs
+			genio_oe[28] <= 0; // uart2_rx
+			genio_oe[29] <= 1; // uart2_tx (output)
+
 		end else begin
 			fsel_strobe <= 0;
 			flash_dma_run <= 0;
@@ -1052,13 +1059,15 @@ module soc(
 					adc_divider <= mem_wdata[23:16];
 					adc_enabled <= mem_wdata[0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OUT) begin
-					genio_out <= mem_wdata[29:0];
+					// Excludes pins used for spi-slave and uart2
+					genio_out[26:3] <= mem_wdata[26:3];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OE) begin
-					genio_oe <= mem_wdata[29:0];
+					// Excludes pins used for spi-slave and uart2
+					genio_oe[26:3] <= mem_wdata[26:3];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2S) begin
-					genio_out <= genio_out | mem_wdata[29:0];
+					genio_out[26:3] <= genio_out[26:3] | mem_wdata[26:3];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2C) begin
-					genio_out <= genio_out & ~mem_wdata[29:0];
+					genio_out[26:3] <= genio_out[26:3] & ~mem_wdata[26:3];
 				end else if (mem_addr[6:2]==MISC_REG_GPEXT_OUT) begin
 					irda_sd <= mem_wdata[30];
 					pmod_out <= mem_wdata[23:16];
