@@ -362,6 +362,10 @@ module soc(
 	reg audio_select;
 	wire audio_ready;
 
+	reg spis_select;
+	wire [31:0] spis_rdata;
+	wire spis_ready;
+
 	wire [31:0] soc_version;
 `ifdef verilator
 	assign soc_version = 'h8000;
@@ -421,10 +425,11 @@ module soc(
 		audio_select = 0;
 		psram_select = 0;
 		linerenderer_select=0;
+		spis_select = 0;
 		bus_error = 0;
 		mem_rdata = 'hx;
 		if (mem_addr[31:28]=='h1) begin
-			if (mem_addr[4] == 1'b0) begin
+			if (mem_addr[5:4] == 2'h0) begin
 				uart_select = mem_valid;
 				mem_rdata = uart_rdata;
 			end else begin
@@ -496,6 +501,9 @@ module soc(
 		end else if (mem_addr[31:28]=='h9) begin
 			psram_select = mem_valid;
 			mem_rdata = psram_rdata;
+		end else if (mem_addr[31:28]=='hA) begin
+			spis_select = mem_valid;
+			mem_rdata = spis_rdata;
 		end else begin
 			//Bus error. Raise IRQ if memory is accessed.
 			mem_rdata = 'hDEADBEEF;
@@ -512,7 +520,9 @@ module soc(
 `endif
 
 	assign mem_ready = ram_ready || uart_ready || irda_ready || misc_select ||
-			lcd_ready || linerenderer_ready || usb_ready || pic_ready || audio_ready || psram_ready ||| bus_error;
+			lcd_ready || linerenderer_ready || usb_ready || pic_ready || audio_ready || 
+			psram_ready || spis_ready 
+			||| bus_error;
 
 	dsadc dsadc (
 		.clk(clk48m),
@@ -713,7 +723,7 @@ module soc(
 	wire [31:0] qpi_wdata;
 	reg qpi_is_idle;
 
-	parameter integer QPI_MASTERCNT = 2;
+	parameter integer QPI_MASTERCNT = 3;
 
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_addr;
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_wdata;
@@ -722,6 +732,10 @@ module soc(
 	wire [QPI_MASTERCNT-1:0] qpimem_arb_do_write;
 	wire [QPI_MASTERCNT-1:0] qpimem_arb_next_word;
 	wire [QPI_MASTERCNT-1:0] qpimem_arb_is_idle;
+
+assign qpimem_arb_next_word[2] = 0;
+assign `SLICE_32(qpimem_arb_rdata, 0) = 0;
+assign qpimem_arb_is_idle[2] = 1;
 
 	qpimem_arbiter #(
 		.MASTER_IFACE_CNT(QPI_MASTERCNT)
