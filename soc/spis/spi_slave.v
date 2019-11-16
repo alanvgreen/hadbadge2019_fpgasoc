@@ -56,7 +56,11 @@ wire next_ack;
 assign next_ack = bus_cyc & !ack;
 reg ack;
 always @(posedge clk) begin
-	ack <= next_ack;
+	if (reset) begin
+		ack <= 0;
+	end else begin
+		ack <= next_ack;
+	end
 end
 assign bus_ack = ack;
 
@@ -65,7 +69,6 @@ always @(posedge clk) begin
 	if (reset) begin
 		register_dma_dest_addr <= 0;
 		register_enable <= 0;
-		register_dma_overflow <= 0;
 	end else begin
 		if (bus_cyc) begin
 			if (bus_we) begin
@@ -168,6 +171,7 @@ always @(posedge clk) begin
 		dma_data_out_flush <= 0;
 		register_in_transaction <= 0;
 		register_words_received <= 0;
+		register_dma_overflow <= 0;
 	end else begin
 		// Set strobes default off 
 		dma_data_out_strobe <= 0;

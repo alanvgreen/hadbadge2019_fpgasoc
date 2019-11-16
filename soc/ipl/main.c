@@ -530,11 +530,12 @@ extern uint32_t *irq_stack_ptr;
 
 #define IRQ_STACK_SIZE (16*1024)
 
-uint32_t * const SPIS = (uint32_t *)(void *)(SPIS_OFFSET);
-
 void main() {
 	syscall_reinit();
 	user_memfn_set(malloc, realloc, free);
+	verilator_start_trace();
+	//When testing in Verilator, put code that pokes your hardware here.
+
 	if (pic_load_run_file("/cart/pic_firmware.bin")) {
 		printf("Found and loaded PIC payload from cart.\n");
 	} else if (pic_load_run_file("/int/pic_firmware.bin")) {
@@ -542,32 +543,6 @@ void main() {
 	}
 
 	LCD_REG(LCD_BL_LEVEL_REG)=0x5000; //save some power by lowering the backlight
-
-	//////////////////////////////////////////
-
-	//When testing in Verilator, put code that pokes your hardware here.
-	if (simulated()) {
-		verilator_start_trace();
-		// Set MOSI to an output
-		MISC_REG(MISC_GENIO_OE_REG) |= 1 << 2;
-		// Ensure SCK, MISO, CS to inputs
-		MISC_REG(MISC_GENIO_OE_REG) &= ~((1 << 27) | (1<<1) | (1<<0));
-
-		// Enable SPI Slave
-		uint8_t *buf1 = malloc(5000);
-		uint8_t *buf1_aligned = (uint8_t *) ((((uint32_t)buf1) + 127) & 0xffffff80);
-		SPIS[1] = (uint32_t) buf1_aligned;
-		SPIS[0] = 1;
-
-		// point frame buffer to SPI, enable fb to see any interference
-		GFX_REG(GFX_FBADDR_REG)=((uint32_t)buf1_aligned)&0xFFFFFF;
-		GFX_REG(GFX_FBPITCH_REG)=(0<<GFX_FBPITCH_PAL_OFF)|(320<<GFX_FBPITCH_PITCH_OFF);
-		GFX_REG(GFX_LAYEREN_REG)=1;
-
-		while(1);
-	}
-
-	//////////////////////////////////////////
 
 	//Initialize IRQ stack to be bigger than the bootrom stack
 	uint32_t *int_stack=malloc(IRQ_STACK_SIZE);

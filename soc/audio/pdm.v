@@ -104,8 +104,6 @@ module pdm #(
 				pdm_r <= oe ? pdm_i : 1'bz;
 `endif
 			assign pdm = pdm_r;
-		end else if (PHY == "ALWAYS_ON") begin
-			assign pdm = pdm_i;
 		end else if (PHY == "ICE40") begin
 			SB_IO #(
 				.PIN_TYPE(6'b110100),

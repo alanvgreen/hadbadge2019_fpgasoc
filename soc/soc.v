@@ -111,6 +111,7 @@ module soc(
 		output reg trace_en
 	);
 
+
 	reg fpga_reload=0;
 	assign programn = ~fpga_reload;
 
@@ -338,11 +339,6 @@ module soc(
 	reg  irda_select;
 	wire irda_ready;
 
-	// UART2
-	wire [31:0] uart2_rdata;
-	reg  uart2_select;
-	wire uart2_ready;
-
 	reg misc_select;
 	wire[31:0] ram_rdata;
 	reg ram_ready;
@@ -365,10 +361,6 @@ module soc(
 	wire [31:0] audio_rdata;
 	reg audio_select;
 	wire audio_ready;
-
-	reg spis_select;
-	wire [31:0] spis_rdata;
-	wire spis_ready;
 
 	wire [31:0] soc_version;
 `ifdef verilator
@@ -422,7 +414,6 @@ module soc(
 		mem_select = 0;
 		uart_select = 0;
 		irda_select = 0;
-		uart2_select = 0;
 		misc_select = 0;
 		lcd_select = 0;
 		usb_select = 0;
@@ -430,19 +421,15 @@ module soc(
 		audio_select = 0;
 		psram_select = 0;
 		linerenderer_select=0;
-		spis_select = 0;
 		bus_error = 0;
 		mem_rdata = 'hx;
 		if (mem_addr[31:28]=='h1) begin
-			if (mem_addr[5:4] == 2'h0) begin
+			if (mem_addr[4] == 1'b0) begin
 				uart_select = mem_valid;
 				mem_rdata = uart_rdata;
-			end else if (mem_addr[5:4] == 2'h1) begin
+			end else begin
 				irda_select = mem_valid;
 				mem_rdata = irda_rdata;
-			end else begin 
-				uart2_select = mem_valid;
-				mem_rdata = uart2_rdata;
 			end
 		end else if (mem_addr[31:28]=='h2) begin
 			misc_select = mem_valid;
@@ -509,9 +496,6 @@ module soc(
 		end else if (mem_addr[31:28]=='h9) begin
 			psram_select = mem_valid;
 			mem_rdata = psram_rdata;
-		end else if (mem_addr[31:28]=='hA) begin
-			spis_select = mem_valid;
-			mem_rdata = spis_rdata;
 		end else begin
 			//Bus error. Raise IRQ if memory is accessed.
 			mem_rdata = 'hDEADBEEF;
@@ -527,9 +511,8 @@ module soc(
 	end
 `endif
 
-	assign mem_ready = ram_ready || uart_ready || irda_ready || uart2_ready || misc_select ||
-			lcd_ready || linerenderer_ready || usb_ready || pic_ready || audio_ready ||
-			psram_ready || spis_ready || bus_error;
+	assign mem_ready = ram_ready || uart_ready || irda_ready || misc_select ||
+			lcd_ready || linerenderer_ready || usb_ready || pic_ready || audio_ready || psram_ready ||| bus_error;
 
 	dsadc dsadc (
 		.clk(clk48m),
@@ -667,24 +650,6 @@ module soc(
 		.rst(rst)
 	);
 
-	uart_wb #(
-		.FIFO_DEPTH(16),
-		.DIV_WIDTH(16),
-		.DW(32),
-		.IRDA(0)
-	) uart2_I (
-		.uart_tx(genio_out[29]), 
-		.uart_rx(genio_in[28]),
-		.bus_addr(mem_addr[3:2]),
-		.bus_wdata(mem_wdata),
-		.bus_rdata(uart2_rdata),
-		.bus_cyc(uart2_select),
-		.bus_ack(uart2_ready),
-		.bus_we(mem_wstrb != 0),
-		.clk(clk48m),
-		.rst(rst)
-	);
-
 	reg [15:0] pic_led;
 	wire [15:0] pic_led_out;
 	assign led = {pic_led_out[10:8], pic_led_out[5:0]};
@@ -730,8 +695,7 @@ module soc(
 
 	pdm #(
 		.WIDTH(16),
-		.DITHER("YES"),
-		.PHY("ALWAYS_ON")
+		.DITHER("YES")
 	) audio_pdm_I (
 		.in(audio_pdm),
 		.pdm(pwmout),
@@ -749,7 +713,7 @@ module soc(
 	wire [31:0] qpi_wdata;
 	reg qpi_is_idle;
 
-	parameter integer QPI_MASTERCNT = 3;
+	parameter integer QPI_MASTERCNT = 2;
 
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_addr;
 	wire [32*QPI_MASTERCNT-1:0] qpimem_arb_wdata;
@@ -814,42 +778,8 @@ module soc(
 		.ready(ram_ready)
 	);
 
-	wire spis_sck;
-	assign spis_sck = genio_in[0];
-	wire spis_mosi;
-	assign spis_mosi = genio_in[1];
-	wire spis_miso;
-	assign spis_miso = genio_out[2];
-	wire spis_cs;
-	assign spis_cs = genio_in[27];
-
-	spi_slave spis(
-		.clk(clk48m),
-		.reset(rst),
-
-		// Bus - used to read and write registers
-		.register_num(mem_addr[4:2]),
-		.data_in(mem_wdata),
-		.data_out(spis_rdata),
-		
-		.bus_cyc(spis_select),
-		.bus_ack(spis_ready),
-		.bus_we(spis_select && mem_wstrb != 4'b0),
-
-		// Interface to qpimem_arb
-		.qpimem_arb_do_write(qpimem_arb_do_write[1]),
-		.qpimem_arb_next_word(qpimem_arb_next_word[1]),
-		.qpimem_arb_addr(`SLICE_32(qpimem_arb_addr, 1)),
-		.qpimem_arb_wdata(`SLICE_32(qpimem_arb_wdata, 1)),
-
-		// Signals from outside pins
-		.SCK(spis_sck),
-		.MOSI(spis_mosi),
-		.MISO(spis_miso),
-		.CS(spis_cs)
-	);
-
 	wire irq_copper;
+
 	vid_linerenderer linerenderer (
 		.clk(clk48m),
 		.reset(rst),
@@ -870,16 +800,16 @@ module soc(
 		.curr_vid_addr(curr_vid_addr),
 		.next_field(next_field),
 
-		.m_do_read(qpimem_arb_do_read[2]),
-		.m_next_word(qpimem_arb_next_word[2]),
-		.m_addr(`SLICE_32(qpimem_arb_addr, 2)),
-		.m_rdata(`SLICE_32(qpimem_arb_rdata, 2)),
-		.m_is_idle(qpimem_arb_is_idle[2])
+		.m_do_read(qpimem_arb_do_read[1]),
+		.m_next_word(qpimem_arb_next_word[1]),
+		.m_addr(`SLICE_32(qpimem_arb_addr, 1)),
+		.m_rdata(`SLICE_32(qpimem_arb_rdata, 1)),
+		.m_is_idle(qpimem_arb_is_idle[1])
 	);
 
 	//video renderer does not write
-	assign qpimem_arb_do_write[2] = 0;
-	assign `SLICE_32(qpimem_arb_wdata, 2) = 0;
+	assign qpimem_arb_do_write[1] = 0;
+	assign `SLICE_32(qpimem_arb_wdata, 1) = 0;
 
 
 	// PSRAM QPI interface
@@ -1019,14 +949,6 @@ module soc(
 			flash_dmaaddr <= 0;
 			flash_rdaddr <= 0;
 			flash_dmalen <= 0;
-			// These are the genio pins used by spi_slave and uart2
-			genio_oe[0] <= 0;  // spis_sck
-			genio_oe[1] <= 0;  // spis_mosi
-			genio_oe[2] <= 1;  // spis_miso (output)
-			genio_oe[27] <= 0; // spis_cs
-			genio_oe[28] <= 0; // uart2_rx
-			genio_oe[29] <= 1; // uart2_tx (output)
-
 		end else begin
 			fsel_strobe <= 0;
 			flash_dma_run <= 0;
@@ -1059,15 +981,13 @@ module soc(
 					adc_divider <= mem_wdata[23:16];
 					adc_enabled <= mem_wdata[0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OUT) begin
-					// Excludes pins used for spi-slave and uart2
-					genio_out[26:3] <= mem_wdata[26:3];
+					genio_out <= mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OE) begin
-					// Excludes pins used for spi-slave and uart2
-					genio_oe[26:3] <= mem_wdata[26:3];
+					genio_oe <= mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2S) begin
-					genio_out[26:3] <= genio_out[26:3] | mem_wdata[26:3];
+					genio_out <= genio_out | mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2C) begin
-					genio_out[26:3] <= genio_out[26:3] & ~mem_wdata[26:3];
+					genio_out <= genio_out & ~mem_wdata[29:0];
 				end else if (mem_addr[6:2]==MISC_REG_GPEXT_OUT) begin
 					irda_sd <= mem_wdata[30];
 					pmod_out <= mem_wdata[23:16];
