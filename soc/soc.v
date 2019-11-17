@@ -839,11 +839,6 @@ module soc(
 	wire spis_cs;
 	assign spis_cs = genio_in[27];
 
-// Dummy out 3rd master
-assign `SLICE_32(qpimem_arb_addr, 2) = 0;
-assign `SLICE_32(qpimem_arb_wdata, 2) = 0;
-assign qpimem_arb_do_write[2] = 0;
-
 	spi_slave spis (
 		.clk(clk48m),
 		.reset(rst),

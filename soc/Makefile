@@ -5,7 +5,9 @@ BADGE_VER ?= 4
 PROJ=soc
 #Seed for nextpnr. Change this to another random value if you happen to run 
 #into a situation that mis-synths or takes extremely long to synth the SoC.
-SEED = 42
+SEED = 1
+#SEED = 4009 # 44.42
+#SEED = 42 # 44.41
 
 # Sources
 	# Base

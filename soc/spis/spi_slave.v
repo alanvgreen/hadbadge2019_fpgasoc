@@ -80,7 +80,11 @@ always @(posedge clk) begin
 			end else begin
 				case (bus_addr) 
 					0: bus_rdata <= {
-							28'b0, 
+							24'b0, 
+							dma_flushing,
+							dma_out_full,
+							dma_out_empty,
+							write_fifo_finished,
 							register_in_transaction,
 							register_dma_overflow, 
 							transfer_in_progress, 
@@ -88,6 +92,8 @@ always @(posedge clk) begin
 						};
 					1: bus_rdata <= register_dma_dest_addr;
 					2: bus_rdata <= register_words_received;
+					3: bus_rdata <= dma_count;
+					4: bus_rdata <= dma_out_diff;
 					default: bus_rdata <= 0;
 				endcase
 			end
@@ -119,7 +125,7 @@ wire sck_edge;
 spi_bit_fifo sck_fifo(
 	.in_data(SCK),
 	.clk(clk),
-	.reset(cs_start), // reset on cs
+	.reset(reset | cs_start), // reset on cs
 	.out_data(),
 	.is_pos_edge(sck_edge),
 	.is_neg_edge());
@@ -128,7 +134,7 @@ wire mosi_out;
 spi_bit_fifo mosi_fifo(
 	.in_data(MOSI),
 	.clk(clk),
-	.reset(cs_start), // reset on cs
+	.reset(reset | cs_start), // reset on cs
 	.out_data(mosi_out),
 	.is_pos_edge(),
 	.is_neg_edge());
@@ -138,8 +144,14 @@ reg [31:0] input_bits; // FIFO for word in - 31 bits + 1 bit for guard
 reg [31:0] dma_data_out;
 reg dma_data_out_strobe;
 reg dma_data_out_flush;
+
+wire dma_out_empty;
 wire dma_out_full;
 reg write_fifo_finished;
+
+wire [5:0] dma_count;
+wire dma_flushing;
+wire [5:0] dma_out_diff;
 
 // FIFO for DMA
 spis_dma_write_fifo write_fifo(
@@ -159,9 +171,12 @@ spis_dma_write_fifo write_fifo(
 	.qpimem_arb_wdata(qpimem_arb_wdata),
 
 	// Status
-	.empty(),
+	.empty(dma_out_empty),
 	.full(dma_out_full),
-	.finished(write_fifo_finished)
+	.finished(write_fifo_finished),
+	.dma_count(dma_count),
+	.flushing(dma_flushing),
+	.wr_diff(dma_out_diff)
 	);
 
 always @(posedge clk) begin
@@ -244,7 +259,14 @@ module spis_dma_write_fifo #(
 	// Status
 	output wire empty,
 	output wire full,
-	output reg finished
+	output reg finished,
+
+	// Words remaining to write
+	output reg [$clog2(FIFO_WORDS)-1:0] dma_count,
+	// Are we flushing?
+	output reg flushing,
+	// Bytes in FIFO
+	output wire [$clog2(FIFO_WORDS)-1:0] wr_diff
 );
 
 localparam PART_WRITE_SIZE = FIFO_WORDS / 2;
@@ -252,9 +274,6 @@ localparam PART_WRITE_SIZE = FIFO_WORDS / 2;
 reg [31:0] ram [0:FIFO_WORDS-1];
 reg [$clog2(FIFO_WORDS)-1:0] w_ptr;
 reg [$clog2(FIFO_WORDS)-1:0] r_ptr;
-reg [$clog2(FIFO_WORDS)-1:0] dma_count; // words remaining to write
-reg flushing;
-wire [$clog2(FIFO_WORDS)-1:0] wr_diff;
 assign wr_diff = w_ptr - r_ptr;
 
 
