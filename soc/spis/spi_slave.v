@@ -11,9 +11,9 @@ module spi_slave(
 	input reset,
 
 	// Bus - used to read and write registers
-	input [2:0] register_num, 
-	input [31:0] data_in,
-	output reg [31:0] data_out,
+	input [2:0] bus_addr, 
+	input [31:0] bus_wdata,
+	output reg [31:0] bus_rdata,
 
 	input  wire bus_cyc,
 	output wire bus_ack,
@@ -28,7 +28,7 @@ module spi_slave(
 	// Signals from outside pins
 	input SCK,
 	input MOSI,
-	output MISO,
+	output reg MISO,
 	input CS    // Active low
 	);
 
@@ -72,29 +72,34 @@ always @(posedge clk) begin
 	end else begin
 		if (bus_cyc) begin
 			if (bus_we) begin
-				case (register_num) 
-					0: begin 
-						register_enable <= data_in[0];
-					end
-					1: register_dma_dest_addr <= data_in;
-					// can't write: register_words_received <= data_in;
+				case (bus_addr) 
+					0: register_enable <= bus_wdata[0];
+					1: register_dma_dest_addr <= bus_wdata;
 					default: /*nop*/;
 				endcase
 			end else begin
-				case (register_num) 
-					0: data_out <= {
+				case (bus_addr) 
+					0: bus_rdata <= {
 							28'b0, 
 							register_in_transaction,
 							register_dma_overflow, 
 							transfer_in_progress, 
 							register_enable
 						};
-					1: data_out <= register_dma_dest_addr;
-					2: data_out <= register_words_received;
-					default: data_out <= 0;
+					1: bus_rdata <= register_dma_dest_addr;
+					2: bus_rdata <= register_words_received;
+					default: bus_rdata <= 0;
 				endcase
 			end
 		end
+	end
+end
+
+
+// Always output zeros to spi master
+always @(posedge clk) begin
+	if (reset) begin
+		MISO <= 0;	
 	end
 end
 
@@ -127,9 +132,6 @@ spi_bit_fifo mosi_fifo(
 	.out_data(mosi_out),
 	.is_pos_edge(),
 	.is_neg_edge());
-
-// Always output zeros to spi master
-assign MISO = 0;
 
 // Word input FIFO
 reg [31:0] input_bits; // FIFO for word in - 31 bits + 1 bit for guard

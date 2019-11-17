@@ -733,10 +733,6 @@ module soc(
 	wire [QPI_MASTERCNT-1:0] qpimem_arb_next_word;
 	wire [QPI_MASTERCNT-1:0] qpimem_arb_is_idle;
 
-assign qpimem_arb_next_word[2] = 0;
-assign `SLICE_32(qpimem_arb_rdata, 0) = 0;
-assign qpimem_arb_is_idle[2] = 1;
-
 	qpimem_arbiter #(
 		.MASTER_IFACE_CNT(QPI_MASTERCNT)
 	) qpi_arb (
@@ -825,6 +821,56 @@ assign qpimem_arb_is_idle[2] = 1;
 	assign qpimem_arb_do_write[1] = 0;
 	assign `SLICE_32(qpimem_arb_wdata, 1) = 0;
 
+	// SPI Slave
+	wire spis_sck;
+	assign spis_sck = genio_in[0];
+	wire spis_mosi;
+	assign spis_mosi = genio_in[1];
+	wire spis_miso;
+	always @(posedge clk48m) begin
+		if (rst) begin
+			// reset
+			genio_out[2] <= 0;		
+		end
+		else begin
+			genio_out[2] <= spis_miso;
+		end
+	end
+	wire spis_cs;
+	assign spis_cs = genio_in[27];
+
+// Dummy out 3rd master
+assign `SLICE_32(qpimem_arb_addr, 2) = 0;
+assign `SLICE_32(qpimem_arb_wdata, 2) = 0;
+assign qpimem_arb_do_write[2] = 0;
+
+	spi_slave spis (
+		.clk(clk48m),
+		.reset(rst),
+
+		// Connections from main bus to drive registers
+		.bus_addr(mem_addr[4:2]),
+		.bus_wdata(mem_wdata),
+		.bus_rdata(spis_rdata),
+		.bus_cyc(spis_select),
+		.bus_ack(spis_ready),
+		.bus_we(mem_wstrb != 0),
+
+		// Connection to qpimem arbiter
+		.qpimem_arb_do_write(qpimem_arb_do_write[2]),
+		.qpimem_arb_next_word(qpimem_arb_next_word[2]),
+		.qpimem_arb_addr(`SLICE_32(qpimem_arb_addr, 2)),
+		.qpimem_arb_wdata(`SLICE_32(qpimem_arb_wdata, 2)),
+
+		// Signals from outside pins
+		.SCK(spis_sck),
+		.MOSI(spis_mosi),
+		.MISO(spis_miso),
+		.CS(spis_cs)
+	);
+
+	// Never reads
+	assign qpimem_arb_do_read[2] = 0;
 
 	// PSRAM QPI interface
 	// -------------------
@@ -945,7 +991,6 @@ assign qpimem_arb_is_idle[2] = 1;
 		end
 	end
 
-
 	//misc reg write ops, registered
 	always @(posedge clk48m) begin
 		if (rst) begin
@@ -963,6 +1008,10 @@ assign qpimem_arb_is_idle[2] = 1;
 			flash_dmaaddr <= 0;
 			flash_rdaddr <= 0;
 			flash_dmalen <= 0;
+			genio_oe[0] <= 0;
+			genio_oe[1] <= 0;
+			genio_oe[2] <= 1;
+			genio_oe[27] <= 0;
 		end else begin
 			fsel_strobe <= 0;
 			flash_dma_run <= 0;
@@ -995,13 +1044,17 @@ assign qpimem_arb_is_idle[2] = 1;
 					adc_divider <= mem_wdata[23:16];
 					adc_enabled <= mem_wdata[0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OUT) begin
-					genio_out <= mem_wdata[29:0];
+					genio_out[29:3] <= mem_wdata[29:3];
+					genio_out[1:0] <= mem_wdata[1:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_OE) begin
-					genio_oe <= mem_wdata[29:0];
+					genio_oe[29:28] <= mem_wdata[29:28];
+					genio_oe[26:3] <= mem_wdata[26:3];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2S) begin
-					genio_out <= genio_out | mem_wdata[29:0];
+					genio_out[29:3] <= genio_out[29:3] | mem_wdata[29:3];
+					genio_out[1:0] <= genio_out[1:0] | mem_wdata[1:0];
 				end else if (mem_addr[6:2]==MISC_REG_GENIO_W2C) begin
-					genio_out <= genio_out & ~mem_wdata[29:0];
+					genio_out[29:3] <= genio_out[29:3] & ~mem_wdata[29:3];
+					genio_out[1:0] <= genio_out[1:0] & ~mem_wdata[1:0];
 				end else if (mem_addr[6:2]==MISC_REG_GPEXT_OUT) begin
 					irda_sd <= mem_wdata[30];
 					pmod_out <= mem_wdata[23:16];

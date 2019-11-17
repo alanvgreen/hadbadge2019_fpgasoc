@@ -85,9 +85,9 @@ spi_slave spis(
 	.reset(rst),
 
 	// Bus - used to read and write registers
-	.register_num(addr[4:2]),
-	.data_in(wdata),
-	.data_out(rdata),
+	.bus_addr(addr[4:2]),
+	.bus_wdata(wdata),
+	.bus_rdata(rdata),
 	.bus_cyc(select),
 	.bus_ack(bus_ack),
 	.bus_we(wstrb != 4'b0),

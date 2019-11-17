@@ -530,17 +530,31 @@ extern uint32_t *irq_stack_ptr;
 
 #define IRQ_STACK_SIZE (16*1024)
 
+uint32_t * const SPIS = (uint32_t *)(void *)(SPIS_OFFSET);
+
+void verilate_spis() {
+	//First, allocate some memory for the background framebuffer. We're gonna dump a fancy image into it. The image is
+	//going to be 8-bit, so we allocate 1 byte per pixel.
+	uint32_t buf=(uint32_t) malloc(480*320 + 0x400);
+	//fbmem = (buf + 0x400) & 0x3ff;
+	uint8_t *fbmem = (uint8_t *) ((buf + 0x3ff) & ~(0x3ff));
+
+	SPIS[1] = ((uint32_t) fbmem) + 480 * 24; // 24 lines down
+	SPIS[0] = 0; // don't run	
+}
+
 void main() {
 	syscall_reinit();
 	user_memfn_set(malloc, realloc, free);
 	verilator_start_trace();
-	//When testing in Verilator, put code that pokes your hardware here.
+	//When testing in Verilator, put code that pokes your hardware here.	
+	// verilate_spis();
 
-	if (pic_load_run_file("/cart/pic_firmware.bin")) {
-		printf("Found and loaded PIC payload from cart.\n");
-	} else if (pic_load_run_file("/int/pic_firmware.bin")) {
-		printf("Found and loaded PIC payload from internal flash.\n");
-	}
+	// if (pic_load_run_file("/cart/pic_firmware.bin")) {
+	// 	printf("Found and loaded PIC payload from cart.\n");
+	// } else if (pic_load_run_file("/int/pic_firmware.bin")) {
+	// 	printf("Found and loaded PIC payload from internal flash.\n");
+	// }
 
 	LCD_REG(LCD_BL_LEVEL_REG)=0x5000; //save some power by lowering the backlight
 
@@ -573,7 +587,8 @@ void main() {
 	SYNTHREG(0x70) = 0x00453000;
     
 	//Skip autoexec when user is holding down the designated bypass key
-	if(!(MISC_REG(MISC_BTN_REG)&BUTTON_B)) {
+	//if(!(MISC_REG(MISC_BTN_REG)&BUTTON_B)) {
+	if (0){
 		//See if there's an autoexec.elf we can run.
 		const char *autoexec;
 		if (booted_from_cartridge()) {
